@@ -23,7 +23,6 @@ import toReal, {
     realFunction,
     realDate,
     realRegExp,
-    realUndoableState,
     realObject
 } from './toReal';
 
@@ -46,7 +45,7 @@ function syncFunction(real, source, processor, refs) {
 }
 
 function syncUndoableState(real, source, processor, refs) {
-    var src = realUndoableState(source, processor, refs);
+    var src = source.valueOf();
 
     return syncReal(real, src, processor, refs);
 }

@@ -1,20 +1,26 @@
-import Immutable from 'immutable';
-
 import isEqualWith from 'lodash/isEqualWith';
 import isFunction from 'lodash/isFunction';
 import isArray from 'lodash/isArray';
 import isPlainObject from 'lodash/isPlainObject';
 import forEach from 'lodash/forEach';
 
-import hashCode from '../utils/hashCode';
 import {
-    isImmutableMap
+    hashCode
+} from '../utils/hashCode';
+import {
+    isImmutableMap,
+    isImmutableList,
+    is
 } from '../utils/lang';
 
 import isUndoableState, {IS_UNDOABLE_SENTINEL} from './isUndoableState';
 
 function toJS(obj) {
     return obj && obj.toJS ? obj.toJS() : obj;
+}
+
+function toJSON(obj) {
+    return obj && obj.toJSON ? obj.toJSON() : obj;
 }
 
 function deepEqualState(oldState, newState) {
@@ -33,7 +39,7 @@ function shallowEqualState(oldState, newState) {
         // If both are array, compare every element,
         // otherwise compare value.
         else if (!isArray(objVal) || !isArray(otherVal)) {
-            return Immutable.is(objVal, otherVal);
+            return is(objVal, otherVal);
         }
         // NOTE: Return undefined will continue to compare by `===` deeply.
     });
@@ -54,9 +60,9 @@ function shallowMerge(oldState, newState, depth = 0) {
     }
 
     // NOTE: Keep the same object no change.
-    if (isArray(newState) || Immutable.List.isList(newState)) {
+    if (isArray(newState) || isImmutableList(newState)) {
         return newState.map(value => {
-            var exist = oldState.find(o => Immutable.is(o, value));
+            var exist = oldState.find(o => is(o, value));
 
             return exist || value;
         });
@@ -66,22 +72,22 @@ function shallowMerge(oldState, newState, depth = 0) {
             if (!value || !state[key]) {
                 return;
             }
-            if (isArray(value) || Immutable.List.isList(state)) {
+            if (isArray(value) || isImmutableList(state)) {
                 state[key] = shallowMerge(value, state[key], depth);
-            } else if (Immutable.is(value, state[key])) {
+            } else if (is(value, state[key])) {
                 state[key] = value;
             }
         });
         return state;
-    } else if (Immutable.Map.isMap(newState)) {
+    } else if (isImmutableMap(newState)) {
         return newState.withMutations(temp => {
             oldState.forEach((value, key) => {
                 if (!value || !temp.get(key)) {
                     return;
                 }
-                if (isArray(value) || Immutable.List.isList(value)) {
+                if (isArray(value) || isImmutableList(value)) {
                     temp.set(key, shallowMerge(value, temp.get(key), depth));
-                } else if (Immutable.is(hashCode(value), hashCode(temp.get(key)))) {
+                } else if (is(hashCode(value), hashCode(temp.get(key)))) {
                     temp.set(key, value);
                 }
             });
@@ -102,8 +108,9 @@ function deepMerge(oldState, newState) {
     } else {
         state = {...newState};
     }
-    delete state.valueOf;
     delete state.toJS;
+    delete state.toJSON;
+    delete state.valueOf;
     delete state[IS_UNDOABLE_SENTINEL];
 
     return state;
@@ -124,12 +131,14 @@ function undoableState(state, options) {
     newState[IS_UNDOABLE_SENTINEL] = true;
     newState.valueOf = function () {
         var target = hashCode(state);
-        var present = histories.get(target).get('present');
+        var present = histories[target].present;
         return present === newState ? state : options.independent ? present.valueOf() : state;
     };
-    // TODO override Immutable's function toXxx()
     newState.toJS = function () {
         return toJS(this.valueOf());
+    };
+    newState.toJSON = function () {
+        return toJSON(this.valueOf());
     };
 
     return newState;
@@ -138,8 +147,7 @@ function undoableState(state, options) {
 // `{target: history}` map
 // TODO Record `action.type`
 // TODO Undoable内的其他model状态的变更也可通过history控制是否batch
-// TODO 去除对Immutable的依赖，直接使用Object
-var histories = Immutable.Map();
+var histories = {};
 
 // 注意：不要直接修改传入对象！！！！
 
@@ -147,12 +155,13 @@ var histories = Immutable.Map();
  * Invoke this method at any time you need using `history`.
  */
 export function getHistory(target) {
-    var history = histories.get(hashCode(target));
+    var hash = hashCode(target);
+    var history = histories[hash];
 
     return history ? {
-        undoes: history.get('past').toArray(),
-        redoes: history.get('future').toArray(),
-        isBatching: history.get('isBatching')
+        undoes: [].concat(history.past),
+        redoes: [].concat(history.future),
+        isBatching: history.isBatching
     } : null;
 }
 
@@ -161,22 +170,20 @@ export function getHistory(target) {
  */
 export function init(state, action, options = {}) {
     var target = hashCode(state);
-    if (!target || histories.has(target)) {
+    if (!target || histories[target]) {
         return state;
     }
 
-    var newState = undoableState(state, options);
-    var history = Immutable.Map({
-        future: Immutable.List(),
-        present: newState,
-        past: Immutable.List(),
+    var present = undoableState(state, options);
+    histories[target] = {
+        future: [],
+        present: present,
+        past: [],
         isBatching: false,
         options: options
-    });
+    };
 
-    histories = histories.set(target, history);
-
-    return newState;
+    return present;
 }
 
 /**
@@ -184,75 +191,68 @@ export function init(state, action, options = {}) {
  */
 export function insert(state, action) {
     var target = hashCode(state);
-    if (!target || !histories.has(target)) {
+    if (!target || !histories[target]) {
         return state;
     }
 
-    var history = histories.get(target);
-    var options = history.get('options');
-    var present = history.get('present');
+    var history = histories[target];
+    var options = history.options;
+    var present = history.present;
     var equals = options.deep ? deepEqualState : shallowEqualState;
     if (equals(present, state)) {
         return state;
     }
 
     var hist = {
-        future: history.get('future'),
+        future: [].concat(history.future),
         present: present,
-        past: history.get('past')
+        past: [].concat(history.past)
     };
     if (options.filter && !options.filter(action, state, hist)) {
         return state;
     }
 
-    var isBatching = history.get('isBatching');
+    var isBatching = history.isBatching;
     if (isBatching) {
         return state;
     }
 
-    var newState = undoableState(state, options);
-    histories = histories.update(target, history => {
-        var past = history.get('past');
-        var limit = options.limit;
-
-        if (limit !== 0) {
-            past = past.push(present);
-            if (limit > 0 && past.size > limit) {
-                past = past.slice(past.size - limit);
-            }
+    var past = history.past;
+    var limit = options.limit;
+    if (limit !== 0) {
+        past.push(present);
+        if (limit > 0 && past.length > limit) {
+            history.past = past.slice(past.length - limit);
         }
-        return history.set('past', past)
-                      .set('present', newState)
-                      .update('future', future => future.clear());
-    });
+    }
 
-    return newState;
+    var newState = undoableState(state, options);
+    history.present = present = newState;
+    history.future = [];
+
+    return present;
 }
 
 export function undo(state, action = {}) {
     var target = hashCode(action.$target);
-    if (!target || !histories.has(target)
+    if (!target || !histories[target]
         || target !== hashCode(state)) {
         return state;
     }
 
-    histories = histories.update(target, history => {
-        var present = history.get('present');
-        var past = history.get('past');
-        var total = Math.max(1, action.total || 1);
-        var index = past.size - Math.min(total, past.size);
-        var undoes = past.slice(index).push(present);
+    var history = histories[target];
+    var options = history.options;
+    var present = history.present;
+    var future = history.future;
+    var past = history.past;
+    var total = Math.max(1, action.total || 1);
+    var index = past.length - Math.min(total, past.length);
+    var undoes = [...past.slice(index), present];
 
-        return history.set('present', undoes.first())
-                      .update('future', future => undoes.shift().concat(future))
-                      .update('past', past => {
-                          return index > 0 ? past.slice(0, index) : past.clear();
-                      });
-    });
+    history.present = present = undoes.shift();
+    history.future = [...undoes, ...future];
+    history.past = index > 0 ? past.slice(0, index) : [];
 
-    var history = histories.get(target);
-    var options = history.get('options');
-    var present = history.get('present');
     if (options.deep) {
         return deepMerge(state, present);
     } else {
@@ -262,30 +262,24 @@ export function undo(state, action = {}) {
 
 export function redo(state, action = {}) {
     var target = hashCode(action.$target);
-    if (!target || !histories.has(target)
+    if (!target || !histories[target]
         || target !== hashCode(state)) {
         return state;
     }
 
-    histories = histories.update(target, history => {
-        var present = history.get('present');
-        var future = history.get('future');
-        var total = Math.max(1, action.total || 1);
-        var index = Math.min(total, future.size);
-        var redoes = future.slice(0, index).unshift(present);
+    var history = histories[target];
+    var options = history.options;
+    var present = history.present;
+    var past = history.past;
+    var future = history.future;
+    var total = Math.max(1, action.total || 1);
+    var index = Math.min(total, future.length);
+    var redoes = [present, ...future.slice(0, index)];
 
-        return history.set('present', redoes.last())
-                      .update('past', past => past.concat(redoes.pop()))
-                      .update('future', future => {
-                          return index < future.size
-                              ? future.slice(index)
-                              : future.clear();
-                      });
-    });
+    history.present = present = redoes.pop();
+    history.past = [...past, ...redoes];
+    history.future = index < future.length ? future.slice(index) : [];
 
-    var history = histories.get(target);
-    var options = history.get('options');
-    var present = history.get('present');
     if (options.deep) {
         return deepMerge(state, present);
     } else {
@@ -295,43 +289,40 @@ export function redo(state, action = {}) {
 
 export function clear(state, action = {}) {
     var target = hashCode(action.$target);
-    if (!target || !histories.has(target)
+    if (!target || !histories[target]
         || target !== hashCode(state)) {
         return state;
     }
 
-    histories = histories.update(target, history => {
-        return history.update('future', future => future.clear())
-                      .update('past', past => past.clear());
-    });
+    var history = histories[target];
+    history.past = [];
+    history.future = [];
 
     return state;
 }
 
 export function startBatch(state, action = {}) {
     var target = hashCode(action.$target);
-    if (!target || !histories.has(target)
+    if (!target || !histories[target]
         || target !== hashCode(state)) {
         return state;
     }
 
-    histories = histories.update(target, history => {
-        return history.update('isBatching', true);
-    });
+    var history = histories[target];
+    history.isBatching = true;
 
     return state;
 }
 
 export function endBatch(state, action = {}) {
     var target = hashCode(action.$target);
-    if (!target || !histories.has(target)
+    if (!target || !histories[target]
         || target !== hashCode(state)) {
         return state;
     }
 
-    histories = histories.update(target, history => {
-        return history.update('isBatching', false);
-    });
+    var history = histories[target];
+    history.isBatching = false;
 
     // Add the final state to history
     return insert(state, action);

@@ -7,7 +7,7 @@ import {
     MODEL_STATE_MUTATE
 } from './actions';
 import {
-    mutate
+    mutation
 } from './reducer';
 
 export default function modelizar(reducer, options = {}) {
@@ -18,7 +18,7 @@ export default function modelizar(reducer, options = {}) {
                     'Expect the parameter "action.state" is Object(except Array).'
                     + ' But received ' + action.state);
 
-                return mutate(state, action, options);
+                return mutation(state, action, options);
             default:
                 return reducer(state, action);
         }

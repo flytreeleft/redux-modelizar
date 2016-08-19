@@ -12,7 +12,6 @@ import forEach from '../utils/forEach';
 import {
     OBJECT_HASH_CODE_SENTINEL,
     hashCode,
-    getHashCode,
     setHashCode
 } from '../utils/hashCode';
 import {
@@ -27,26 +26,28 @@ import {
     IS_REG_EXP_SENTINEL
 } from './sentinels';
 
-function createRefObj(hashCode) {
-    return setHashCode({
-        [IS_REFERENCE_SENTINEL]: true
-    }, hashCode);
+function createRefObj(hash) {
+    return {
+        [IS_REFERENCE_SENTINEL]: true,
+        [OBJECT_HASH_CODE_SENTINEL]: hash
+    };
 }
 
-function createObj(ctor, hashCode) {
-    return setHashCode({
+function createObj(ctor, hash) {
+    return {
         [OBJECT_CLASS_SENTINEL]: getFunctionName(ctor),
+        [OBJECT_HASH_CODE_SENTINEL]: hash,
         equals: function (other) {
             if (!other) {
                 return false;
             } else if (isFunction(other.hashCode)) {
                 return this.hashCode() === other.hashCode();
             } else if (!isImmutableMap(other)) {
-                return this.hashCode() === getHashCode(other);
+                return this.hashCode() === hashCode(other);
             }
         },
-        hashCode: () => hashCode
-    }, hashCode);
+        hashCode: () => hash
+    };
 }
 
 /**
@@ -59,8 +60,9 @@ function isRefProp(obj, prop, refProps) {
     while (proto && Object.getPrototypeOf(proto).constructor !== Object) {
         proto = Object.getPrototypeOf(proto);
 
-        if (proto.constructor.name) {
-            props.push(prop.constructor.name + `#${prop}`);
+        var clsName = proto.constructor.name;
+        if (clsName) {
+            props.push(`${clsName}#${prop}`);
         }
     }
 
@@ -103,10 +105,10 @@ function plainImmutable(obj, refProps, refs) {
 }
 
 function plainArray(array, refProps, refs) {
-    var hashCode = refs.get(array);
+    var hash = refs.get(array);
     var newArray = array.map(value => toPlain(value, refProps, refs));
 
-    setHashCode(newArray, hashCode);
+    setHashCode(newArray, hash);
 
     return newArray;
 }
@@ -116,8 +118,8 @@ function plainObject(obj, refProps, refs) {
                         OBJECT_CLASS_SENTINEL,
                         'equals', 'hashCode', 'toJS',
                         'toJSON', 'toObject', 'toArray'];
-    var hashCode = refs.get(obj);
-    var po = createObj(obj.constructor, hashCode);
+    var objHash = refs.get(obj);
+    var po = createObj(obj.constructor, objHash);
 
     forEach(obj, (value, prop) => {
         if (excludeProps.indexOf(prop) >= 0) {
@@ -125,7 +127,8 @@ function plainObject(obj, refProps, refs) {
         }
 
         if (isObject(value) && isRefProp(obj, prop, refProps)) {
-            po[prop] = createRefObj(hashCode);
+            let valueHash = hashCode(value);
+            po[prop] = createRefObj(valueHash);
         } else {
             po[prop] = toPlain(value, refProps, refs);
         }

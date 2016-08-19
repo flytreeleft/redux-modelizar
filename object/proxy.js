@@ -47,6 +47,7 @@ function deepEqual(obj, other) {
     });
 }
 
+const IS_GUARDED_SENTINEL = '__IS_GUARDED__';
 /**
  * Add guard for `obj` to receive the state mutations.
  */
@@ -65,13 +66,14 @@ function addMutationGuard(obj) {
         var des = Object.getOwnPropertyDescriptor(obj, prop);
 
         guard.descriptors[prop] = des;
-        // TODO How to receive new value of the non-configurable property?
+        // TODO How to receive new value of the non-configurable but writable property?
+        // TODO 深度克隆Array和未被代理的Object。注意对循环引用的处理！！
+        // TODO 不允许其他Object引用本Object内的数据并作引用相等比较！！
         guard.mutations[prop] = value;
         if (!des.configurable || !des.writable) {
             return;
         }
 
-        // TODO Array mutation detecting?
         Object.defineProperty(obj, prop, {
             configurable: des.configurable,
             enumerable: des.enumerable,
@@ -81,7 +83,19 @@ function addMutationGuard(obj) {
             }
         });
     });
+
+    Object.defineProperty(obj, IS_GUARDED_SENTINEL, {
+        configurable: true,
+        writable: false,
+        enumerable: false,
+        value: true
+    });
+
     return guard;
+}
+
+function isMutationGuarded(obj) {
+    return obj && obj[IS_GUARDED_SENTINEL];
 }
 
 /**
@@ -94,7 +108,19 @@ function removeMutationGuard(obj, guard) {
         }
     });
 
+    delete obj[IS_GUARDED_SENTINEL];
+
     return guard.mutations;
+}
+
+const STORE_SENTINEL = '__STORE__';
+function bindStore(store, obj) {
+    Object.defineProperty(obj, STORE_SENTINEL, {
+        configurable: false,
+        writable: false,
+        enumerable: false,
+        value: store
+    });
 }
 
 function getMethodsUntilBase(cls) {
@@ -114,7 +140,7 @@ function getMethodsUntilBase(cls) {
     });
 }
 
-function proxyClass(store, cls) {
+function proxyClass(cls) {
     if (isPrimitiveClass(cls)
         || [Object, Array].indexOf(cls) >= 0
         || isProxiedClass(cls)) {
@@ -123,7 +149,7 @@ function proxyClass(store, cls) {
 
     var proxyCls = proxyClassMap.get(cls);
     if (!proxyCls) {
-        proxyCls = createProxyClass(store, cls);
+        proxyCls = createProxyClass(cls);
 
         proxyClassMap.set(cls, proxyCls);
     }
@@ -131,36 +157,31 @@ function proxyClass(store, cls) {
     return proxyCls;
 }
 
-function createProxyClass(store, cls) {
+function createProxyClass(cls) {
     if (!cls.name || !getBaseClass(cls).name) {
         throw new Error('Class or it\'s base class can not be anonymous.');
     }
 
     var proxyClsName = classify(cls.name + PROXY_CLASS_SUFFIX);
     // No-argument constructor
-    var proxyCls = new Function('bindHistory', `return function ${proxyClsName}() {
-        bindHistory(this);
-    }`)(obj => {
-        bindHistory(store, obj);
-    });
+    var proxyCls = new Function(`return function ${proxyClsName}() {}`)();
 
     proxyCls = extend(proxyCls, cls);
     proxyCls[IS_PROXIED_CLASS_SENTINEL] = true;
 
-    proxyClassMethod(store, proxyCls, cls);
-    proxyClassStatic(store, proxyCls, cls);
+    proxyClassMethod(proxyCls, cls);
+    proxyClassStatic(proxyCls, cls);
 
     return proxyCls;
 }
 
-function proxyClassMethod(store, proxyCls, cls) {
+function proxyClassMethod(proxyCls, cls) {
     // TODO 代理属性的setter接口，仅在开关开启时允许修改（即backup/recover时），其余情况抛异常
     getMethodsUntilBase(cls).forEach(methodName => {
         var callback = cls.prototype[methodName];
 
         proxyCls.prototype[methodName] = function proxiedByModelizar() {
             var callWithHistory = (cb) => {
-                // TODO 通过全局状态控制batch（无需担心异步问题，因为状态是集中管理的）
                 if (this.history && !this.history.isBatching) {
                     try {
                         this.history.startBatch();
@@ -175,20 +196,26 @@ function proxyClassMethod(store, proxyCls, cls) {
 
             return callWithHistory(() => {
                 var ret;
-                var mutations = null;
-                var guard = null;
-                // NOTE: The current scope `this` can not be changed to other,
-                // so that, `===` can be used in any method.
-                try {
-                    guard = addMutationGuard(this);
-                    ret = callback.apply(this, arguments);
-                } finally {
-                    mutations = removeMutationGuard(this, guard);
-                }
 
-                if (!deepEqual(this, mutations)) {
-                    var method = `${cls.name}#${methodName}`;
-                    store.dispatch(mutateState(mutations, method));
+                if (isMutationGuarded(this)) {
+                    ret = callback.apply(this, arguments);
+                } else {
+                    var mutations = null;
+                    var guard = null;
+                    // NOTE: The current scope `this` can not be changed to other,
+                    // so that, `===` can be used in any method.
+                    try {
+                        guard = addMutationGuard(this);
+                        ret = callback.apply(this, arguments);
+                    } finally {
+                        mutations = removeMutationGuard(this, guard);
+                    }
+
+                    if (!deepEqual(this, mutations)) {
+                        var method = `${cls.name}#${methodName}`;
+                        var store = this[STORE_SENTINEL];
+                        store.dispatch(mutateState(mutations, method));
+                    }
                 }
                 return ret;
             });
@@ -196,7 +223,7 @@ function proxyClassMethod(store, proxyCls, cls) {
     });
 }
 
-function proxyClassStatic(store, proxyCls, cls) {
+function proxyClassStatic(proxyCls, cls) {
     var excludeProps = ['constructor', 'override', 'superclass', 'supr', 'extend'];
 
     forEach(cls, (value, prop) => {
@@ -230,12 +257,15 @@ function proxyPlainObject(store, obj, deep, depth, seen) {
 
 function proxyObject(store, obj, deep, depth, seen) {
     var ctor = obj.constructor;
-    var proxyCls = proxyClass(store, ctor);
+    var proxyCls = proxyClass(ctor);
     if (proxyCls === ctor) {
         return obj;
     }
 
     var proxied = instance(proxyCls);
+    // NOTE: Binding store to instance, not class for global sharing proxied class.
+    bindStore(store, proxied);
+    bindHistory(store, proxied);
     // TODO Proxy the owned methods of `obj`? Maybe we should make sure the owned method invoking prototype's methods.
     return proxyMerge(store, proxied, obj, deep, depth + 1, seen);
 }
