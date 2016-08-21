@@ -15,7 +15,6 @@ import {
 import forEach from '../utils/forEach';
 import instance from '../utils/instance';
 
-import bindHistory from '../undoable/bindHistory';
 import {
     mutateState
 } from '../modelizar/actions';
@@ -54,7 +53,7 @@ const IS_GUARDED_SENTINEL = '__IS_GUARDED__';
 function addMutationGuard(obj) {
     var guard = {
         descriptors: {},
-        mutations: new obj.constructor()
+        mutations: new obj.constructor() // Like a ghost
     };
 
     // TODO 在Vue.js中以下方式可能会存在问题
@@ -181,44 +180,29 @@ function proxyClassMethod(proxyCls, cls) {
         var callback = cls.prototype[methodName];
 
         proxyCls.prototype[methodName] = function proxiedByModelizar() {
-            var callWithHistory = (cb) => {
-                if (this.history && !this.history.isBatching) {
-                    try {
-                        this.history.startBatch();
-                        return cb();
-                    } finally {
-                        this.history.endBatch();
-                    }
-                } else {
-                    return cb();
-                }
-            };
+            var ret;
 
-            return callWithHistory(() => {
-                var ret;
-
-                if (isMutationGuarded(this)) {
+            if (isMutationGuarded(this)) {
+                ret = callback.apply(this, arguments);
+            } else {
+                var mutations = null;
+                var guard = null;
+                // NOTE: The current scope `this` can not be changed to other,
+                // so that, `===` can be used in any method.
+                try {
+                    guard = addMutationGuard(this);
                     ret = callback.apply(this, arguments);
-                } else {
-                    var mutations = null;
-                    var guard = null;
-                    // NOTE: The current scope `this` can not be changed to other,
-                    // so that, `===` can be used in any method.
-                    try {
-                        guard = addMutationGuard(this);
-                        ret = callback.apply(this, arguments);
-                    } finally {
-                        mutations = removeMutationGuard(this, guard);
-                    }
-
-                    if (!deepEqual(this, mutations)) {
-                        var method = `${cls.name}#${methodName}`;
-                        var store = this[STORE_SENTINEL];
-                        store.dispatch(mutateState(mutations, method));
-                    }
+                } finally {
+                    mutations = removeMutationGuard(this, guard);
                 }
-                return ret;
-            });
+
+                if (!deepEqual(this, mutations)) {
+                    var method = `${cls.name}#${methodName}`;
+                    var store = this[STORE_SENTINEL];
+                    store.dispatch(mutateState(mutations, method));
+                }
+            }
+            return ret;
         };
     });
 }
@@ -265,7 +249,6 @@ function proxyObject(store, obj, deep, depth, seen) {
     var proxied = instance(proxyCls);
     // NOTE: Binding store to instance, not class for global sharing proxied class.
     bindStore(store, proxied);
-    bindHistory(store, proxied);
     // TODO Proxy the owned methods of `obj`? Maybe we should make sure the owned method invoking prototype's methods.
     return proxyMerge(store, proxied, obj, deep, depth + 1, seen);
 }

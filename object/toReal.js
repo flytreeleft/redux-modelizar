@@ -1,6 +1,7 @@
 import isObject from 'lodash/isObject';
 import isArray from 'lodash/isArray';
 import isString from 'lodash/isString';
+import isFunction from 'lodash/isFunction';
 
 import {
     isImmutableList,
@@ -87,7 +88,9 @@ export function realObject(obj, processor, refs, candidateCtor) {
     var hash = hashCode(obj);
     var ro = instance(Ctor);
 
-    processor && (ro = processor(ro));
+    if (processor && isFunction(processor.pre || processor)) {
+        ro = (processor.pre || processor)(ro);
+    }
     setHashCode(ro, hash);
     refs.set(hash, ro);
 
@@ -101,6 +104,9 @@ export function realObject(obj, processor, refs, candidateCtor) {
         }
     });
 
+    if (processor && isFunction(processor.post)) {
+        ro = processor.post(ro);
+    }
     return ro;
 }
 

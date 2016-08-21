@@ -1,19 +1,28 @@
 import isPlainObject from 'lodash/isPlainObject';
 import isArray from 'lodash/isArray';
 import cloneWith from 'lodash/cloneWith';
+import find from 'lodash/find';
 
 import {
     isImmutableMap,
     isImmutableList,
+    isImmutable,
     is
 } from '../utils/lang';
+import {
+    MODEL_STATE_MUTATE
+} from './actions';
+import undoable from '../undoable';
 
-// TODO 维护全局映射表，用于快速判断是否需要更新state，以及覆盖目标位置state
+function map(obj, mapper) {
+    // TODO Receive Object, Array, Immutable.Map, Immutable.List
+    // TODO If no change happened, return the original reference, otherwise return a new reference.
+}
 
-function mutateByMap(state, target) {
+function mutateByMap(state, action, histories) {
     var changed = false;
     var newState = state.map(value => {
-        var newValue = mutateTarget(value, target);
+        var newValue = mutation(value, action, histories);
         !changed && (changed = newValue !== value);
 
         return newValue;
@@ -22,26 +31,26 @@ function mutateByMap(state, target) {
     return changed ? newState : state;
 }
 
-function mutateImmutableMap(state, target) {
-    return mutateByMap(state, target);
+function mutateImmutableMap(state, action, histories) {
+    return mutateByMap(state, action, histories);
 }
 
-function mutateImmutableList(state, target) {
-    return mutateByMap(state, target);
+function mutateImmutableList(state, action, histories) {
+    return mutateByMap(state, action, histories);
 }
 
-function mutateArray(state, target) {
-    return mutateByMap(state, target);
+function mutateArray(state, action, histories) {
+    return mutateByMap(state, action, histories);
 }
 
-function mutateObject(state, target) {
+function mutateObject(state, action, histories) {
     var changed = false;
     var newState = cloneWith(state, value => {
         if (value === state) {
             return;
         }
 
-        var newValue = mutateTarget(value, target);
+        var newValue = mutation(value, action, histories);
         !changed && (changed = newValue !== value);
 
         return newValue;
@@ -50,33 +59,46 @@ function mutateObject(state, target) {
     return changed ? newState : state;
 }
 
-function mutateTarget(state, target) {
-    if (is(state, target)) {
-        if (state !== target && (isImmutableList(state) || isImmutableMap(state))) {
-            return state.constructor().mergeDeep(target);
-        } else {
-            return target;
-        }
+function mutate(state, action, histories) {
+    switch (action.type) {
+        case MODEL_STATE_MUTATE:
+            var target = action.$state;
+            if (!is(state, target)) {
+                break;
+            }
+            if (state !== target && isImmutable(state)) {
+                return state.constructor().mergeDeep(target);
+            } else {
+                return target;
+            }
     }
-    else if (isImmutableMap(state)) {
-        return mutateImmutableMap(state, target);
+
+    if (isImmutableMap(state)) {
+        return mutateImmutableMap(state, action, histories);
     }
     else if (isImmutableList(state)) {
-        return mutateImmutableList(state, target);
+        return mutateImmutableList(state, action, histories);
     }
     else if (isArray(state)) {
-        return mutateArray(state, target);
+        return mutateArray(state, action, histories);
     }
     else if (isPlainObject(state)) {
-        return mutateObject(state, target);
+        return mutateObject(state, action, histories);
     }
-    else {
-        return state;
-    }
+    return state;
 }
 
-export function mutation(state, action = {}) {
-    var target = action.state;
+export function mutation(state, action = {}, histories) {
+    var history = find(histories, history => {
+        return history.filter(state, action);
+    });
 
-    return mutateTarget(state, target);
+    if (history) {
+        // Dynamically create undoable reducer wrapper.
+        return undoable((state, action) => {
+            return mutate(state, action, histories);
+        }, history.options)(state, action);
+    } else {
+        return mutate(state, action, histories);
+    }
 }

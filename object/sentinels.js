@@ -59,5 +59,5 @@ export function getObjClass(obj) {
     else if (isFunction(obj.withMutations)) {
         name = obj.get(OBJECT_CLASS_SENTINEL);
     }
-    return getFunctionByName(name);
+    return name ? getFunctionByName(name) : undefined;
 }

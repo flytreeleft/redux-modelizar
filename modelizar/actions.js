@@ -8,6 +8,6 @@ export function mutateState(state, method) {
     return {
         type: MODEL_STATE_MUTATE,
         method,
-        state
+        $state: state
     };
 }

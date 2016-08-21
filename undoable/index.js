@@ -6,6 +6,7 @@ import isObject from 'lodash/isObject';
 import isArray from 'lodash/isArray';
 
 import {
+    UNDOABLE_INIT,
     UNDOABLE_UNDO,
     UNDOABLE_REDO,
     UNDOABLE_CLEAR,
@@ -55,6 +56,10 @@ export default function undoable(reducer, options = {}) {
         var start = new Date();
         try {
             switch (action.type) {
+                case UNDOABLE_INIT:
+                    // NOTE: Dispatch `UNDOABLE_INIT` when binding history to model.
+                    // see `./bindHistory.js`.
+                    return init(state, action, options);
                 case UNDOABLE_UNDO:
                     return undo(state, action);
                 case UNDOABLE_REDO:
@@ -67,14 +72,12 @@ export default function undoable(reducer, options = {}) {
                     return endBatch(state, action);
                 default:
                     // 注意以下情况：
-                    // - init：其仅在首次更新状态时才会初始化历史数据；
                     // - 状态变更（部分/全部）：reducer返回的必然为完整的model state，
                     //   故，action无需指定target；
                     // - 多级undoable：insert中会检查状态是否真的发生变化，
                     //   在下级发生变化且`deep==true`时，上级也需同样记录变化；
-                    var oldState = init(state, action, options);
                     let start = new Date();
-                    var newState = reducer(oldState, action);
+                    var newState = reducer(state, action);
                     let end = new Date();
                     console.log('[Undoable]: reducer %s %fms.', action.type, end.getTime() - start.getTime());
 
