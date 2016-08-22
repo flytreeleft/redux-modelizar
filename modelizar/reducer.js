@@ -1,6 +1,5 @@
 import isPlainObject from 'lodash/isPlainObject';
 import isArray from 'lodash/isArray';
-import cloneWith from 'lodash/cloneWith';
 import find from 'lodash/find';
 
 import {
@@ -9,26 +8,16 @@ import {
     isImmutable,
     is
 } from '../utils/lang';
+import map from '../utils/map';
 import {
     MODEL_STATE_MUTATE
 } from './actions';
 import undoable from '../undoable';
 
-function map(obj, mapper) {
-    // TODO Receive Object, Array, Immutable.Map, Immutable.List
-    // TODO If no change happened, return the original reference, otherwise return a new reference.
-}
-
 function mutateByMap(state, action, histories) {
-    var changed = false;
-    var newState = state.map(value => {
-        var newValue = mutation(value, action, histories);
-        !changed && (changed = newValue !== value);
-
-        return newValue;
+    return map(state, value => {
+        return mutation(value, action, histories);
     });
-
-    return changed ? newState : state;
 }
 
 function mutateImmutableMap(state, action, histories) {
@@ -44,19 +33,7 @@ function mutateArray(state, action, histories) {
 }
 
 function mutateObject(state, action, histories) {
-    var changed = false;
-    var newState = cloneWith(state, value => {
-        if (value === state) {
-            return;
-        }
-
-        var newValue = mutation(value, action, histories);
-        !changed && (changed = newValue !== value);
-
-        return newValue;
-    });
-
-    return changed ? newState : state;
+    return mutateByMap(state, action, histories);
 }
 
 function mutate(state, action, histories) {

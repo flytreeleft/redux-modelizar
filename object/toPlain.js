@@ -101,6 +101,7 @@ function plainFunction(fn, refProps, refs) {
 
 function plainImmutable(obj, refProps, refs) {
     // No need to plain immutable object
+    // TODO Plain化内部的Object和Array
     return obj;
 }
 
@@ -145,7 +146,8 @@ export default function toPlain(obj, refProps = [], refs = new Map()) {
     if (!isObject(obj)) {
         return obj;
     }
-    if (refs.get(obj)) {
+
+    if ([null, undefined].indexOf(refs.get(obj)) < 0) {
         throw new Error('Cycle reference is detected,'
                         + ' please add it to "refProps": '
                         + obj);

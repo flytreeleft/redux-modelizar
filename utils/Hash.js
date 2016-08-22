@@ -191,7 +191,7 @@ if (usingWeakMap) {
 
 var objHashUID = 0;
 
-/* Changed for my needs */
+/* Change sentinel name (flytreeleft@126.com) */
 export const OBJECT_HASH_CODE_SENTINEL = '__OBJECT_HASH_CODE__';
 var UID_HASH_KEY = OBJECT_HASH_CODE_SENTINEL;
 

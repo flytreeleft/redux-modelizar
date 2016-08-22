@@ -98,6 +98,10 @@ function shallowMerge(oldState, newState, depth = 0) {
 }
 
 function deepMerge(oldState, newState) {
+    if (!isUndoableState(newState)) {
+        return newState;
+    }
+
     var state;
     // NOTE: 这里向状态树返回新的使用原始toJS的状态，
     // 从而保证undo/redo的model可返回到指定状态，
@@ -117,7 +121,7 @@ function deepMerge(oldState, newState) {
 }
 
 function undoableState(state, options) {
-    if (isUndoableState(state)) {
+    if (isUndoableState(state) || !options.independent) {
         return state;
     }
 

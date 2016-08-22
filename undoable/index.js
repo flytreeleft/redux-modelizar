@@ -43,9 +43,10 @@ export default function undoable(reducer, options = {}) {
         // * 0: no history;
         // * [1,): limit number;
         limit: -1,
-        // keep the `history` to be redo/undo independently,
-        // the super `history` will not change the current history state
-        independent: true
+        // Keep the `history` to be redo/undo independently,
+        // the top state's `history` will not change independent history's state.
+        // NOTE: The top history should always keep `independent` to `false`.
+        independent: false
     });
 
     return (state, action = {}) => {
@@ -53,39 +54,29 @@ export default function undoable(reducer, options = {}) {
             'Expect the parameter "state" is Immutable.Map, Object(except Array).'
             + ' But received ' + state);
 
-        var start = new Date();
-        try {
-            switch (action.type) {
-                case UNDOABLE_INIT:
-                    // NOTE: Dispatch `UNDOABLE_INIT` when binding history to model.
-                    // see `./bindHistory.js`.
-                    return init(state, action, options);
-                case UNDOABLE_UNDO:
-                    return undo(state, action);
-                case UNDOABLE_REDO:
-                    return redo(state, action);
-                case UNDOABLE_CLEAR:
-                    return clear(state, action);
-                case UNDOABLE_START_BATCH:
-                    return startBatch(state, action);
-                case UNDOABLE_END_BATCH:
-                    return endBatch(state, action);
-                default:
-                    // 注意以下情况：
-                    // - 状态变更（部分/全部）：reducer返回的必然为完整的model state，
-                    //   故，action无需指定target；
-                    // - 多级undoable：insert中会检查状态是否真的发生变化，
-                    //   在下级发生变化且`deep==true`时，上级也需同样记录变化；
-                    let start = new Date();
-                    var newState = reducer(state, action);
-                    let end = new Date();
-                    console.log('[Undoable]: reducer %s %fms.', action.type, end.getTime() - start.getTime());
-
-                    return insert(newState, action);
-            }
-        } finally {
-            var end = new Date();
-            console.log('[Undoable]: %s %fms.', action.type, end.getTime() - start.getTime());
+        switch (action.type) {
+            case UNDOABLE_INIT:
+                // NOTE: Dispatch `UNDOABLE_INIT` when binding history to model.
+                // see `./bindHistory.js`.
+                return init(state, action, options);
+            case UNDOABLE_UNDO:
+                return undo(state, action);
+            case UNDOABLE_REDO:
+                return redo(state, action);
+            case UNDOABLE_CLEAR:
+                return clear(state, action);
+            case UNDOABLE_START_BATCH:
+                return startBatch(state, action);
+            case UNDOABLE_END_BATCH:
+                return endBatch(state, action);
+            default:
+                // 注意以下情况：
+                // - 状态变更（部分/全部）：reducer返回的必然为完整的model state，
+                //   故，action无需指定target；
+                // - 多级undoable：insert中会检查状态是否真的发生变化，
+                //   在下级发生变化且`deep==true`时，上级也需同样记录变化；
+                var newState = reducer(state, action);
+                return insert(newState, action);
         }
     };
 }

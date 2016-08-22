@@ -6,8 +6,8 @@ export {
 } from './modelizar/actions';
 
 export {
-    default as createPlain
-} from './createPlain';
+    default as combineReducers
+} from './combineReducers';
 export {
     default as mappingState
 } from './mappingState';
