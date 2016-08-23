@@ -1,4 +1,5 @@
 import isFunction from 'lodash/isFunction';
+import defaults from 'lodash/defaults';
 
 import {
     MODEL_STATE_MUTATE
@@ -19,23 +20,26 @@ import {
 } from '../object/sentinels';
 
 export default function modelizar(reducer, options = {}) {
-    // options = {
-    //     undoable: [{
-    //         type: Object,
-    //         filter: (state, action) => false,
-    //         options: {}
-    //     }]
-    // };
+    options = defaults(options, {
+        // The condition and options for the matched state.
+        // Every element can contains following properties:
+        // - {Function} [type] The constructor function of model.
+        // - {Function} [filter=(state, action)=>false] The custom filter function.
+        // - {Object} [options] The options of `undoable`, see `../undoable/index`.
+        undoable: []
+    });
+
     var histories = [].concat(options.undoable || []).map(history => {
         var filter = history.filter;
 
-        if (!isFunction(filter)) {
+        if (!isFunction(filter) && isFunction(history.type)) {
             filter = (state, action) => {
-                var Cls = state && getObjClass(state);
+                var Cls = getObjClass(state);
                 return Cls ? new Cls() instanceof history.type : false;
             };
+        } else {
+            filter = () => false;
         }
-
         return {
             filter: filter,
             options: history.options || {}

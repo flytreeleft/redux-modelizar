@@ -14,13 +14,11 @@ export default function (reducers, options = {}) {
     options.refProps = [].concat(options.refProps || []);
 
     return (state = {}, action) => {
-        var newState = {};
+        var newState;
 
         switch (action.type) {
             case ActionTypes.INIT:
-                newState = map(state, (value) => {
-                    return toPlain(value, options.refProps);
-                });
+                newState = map(state, (value) => toPlain(value, options.refProps));
                 break;
             default:
                 newState = state;

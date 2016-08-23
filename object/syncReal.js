@@ -7,6 +7,7 @@ import {
     isPrimitive
 } from '../utils/lang';
 import forEach from '../utils/forEach';
+import isWritable from '../utils/isWritable';
 import {
     hashCode
 } from '../utils/hashCode';
@@ -117,12 +118,11 @@ function syncObject(real, source, processor, refs) {
                             'equals', 'hashCode', 'toJS',
                             'toJSON', 'toObject', 'toArray'];
         forEach(source, (srcVal, prop) => {
-            if (excludeProps.indexOf(prop) >= 0) {
+            if (excludeProps.indexOf(prop) >= 0 || !isWritable(source, prop)) {
                 return;
             }
 
             var value = syncReal(real[prop], srcVal, processor, refs);
-            // TODO Ignore the property with `writable==false`
             if (value !== real[prop]) {
                 real[prop] = value;
             }

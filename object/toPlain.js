@@ -100,9 +100,7 @@ function plainFunction(fn, refProps, refs) {
 }
 
 function plainImmutable(obj, refProps, refs) {
-    // No need to plain immutable object
-    // TODO Plain化内部的Object和Array
-    return obj;
+    return obj.map(value => toPlain(value, refProps, refs));
 }
 
 function plainArray(array, refProps, refs) {

@@ -14,6 +14,7 @@ import {
     hashCode,
     setHashCode
 } from '../utils/hashCode';
+import isWritable from '../utils/isWritable';
 import {
     getFunctionByName
 } from './functions';
@@ -98,8 +99,7 @@ export function realObject(obj, processor, refs, candidateCtor) {
                         'equals', 'hashCode', 'toJS',
                         'toJSON', 'toObject', 'toArray'];
     forEach(obj, (value, prop) => {
-        if (excludeProps.indexOf(prop) < 0) {
-            // TODO Ignore the property with `writable==false`
+        if (excludeProps.indexOf(prop) < 0 && isWritable(obj, prop)) {
             ro[prop] = toReal(value, processor, refs);
         }
     });

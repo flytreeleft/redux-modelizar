@@ -2,7 +2,6 @@ import isEqualWith from 'lodash/isEqualWith';
 import isFunction from 'lodash/isFunction';
 import isArray from 'lodash/isArray';
 import isPlainObject from 'lodash/isPlainObject';
-import forEach from 'lodash/forEach';
 
 import {
     hashCode
@@ -12,6 +11,7 @@ import {
     isImmutableList,
     is
 } from '../utils/lang';
+import map from '../utils/map';
 
 import isUndoableState, {IS_UNDOABLE_SENTINEL} from './isUndoableState';
 
@@ -45,60 +45,55 @@ function shallowEqualState(oldState, newState) {
     });
 }
 
-// TODO 改进以下方法
-function shallowMerge(oldState, newState, depth = 0) {
-    if (depth++ > 0) {
-        let target = hashCode(newState);
-        let history = histories.get(target);
-        if (history) {
-            let options = history.get('options');
+function isArrayLike(obj) {
+    return isArray(obj) || isImmutableList(obj);
+}
 
-            if (options.independent) {
-                return history.get('present');
-            }
-        }
+function isMapLike(obj) {
+    return isPlainObject(obj) || isImmutableMap(obj);
+}
+
+/**
+ * When following condition is true, applying the value of new state:
+ * - The old state doesn't contains the value that exists in new state;
+ * - The old contains the value which doesn't exist in new state;
+ * - The same property but different value (except Object, Array) or value type;
+ *
+ * Applying the value of old state:
+ * - The same property and value type are Array or Immutable.List,
+ *   keep the element which `is` the value of old state;
+ * - The same property and value tye are Object or Immutable.Map,
+ *   if the new one `is` the old one, return the old one;
+ */
+function shallowMerge(oldState, newState, deep = true) {
+    if (oldState === newState || !oldState) {
+        return newState;
     }
 
-    // NOTE: Keep the same object no change.
-    if (isArray(newState) || isImmutableList(newState)) {
-        return newState.map(value => {
-            var exist = oldState.find(o => is(o, value));
+    if (isArrayLike(oldState) && isArrayLike(newState)) {
+        return map(newState, (value) => {
+            // NOTE: Using owned `find` to fit Array and Immutable.List.
+            var exist = oldState.find((oldValue) => is(oldValue, value));
 
             return exist || value;
         });
-    } else if (isPlainObject(newState)) {
-        let state = {...newState};
-        forEach(oldState, (value, key) => {
-            if (!value || !state[key]) {
-                return;
+    } else if (isMapLike(oldState) && isMapLike(newState)) {
+        return deep ? map(newState, (newValue, key) => {
+            var oldValue = isPlainObject(oldState) ? oldState[key] : oldState.get(key);
+
+            if (is(newValue, oldValue)) {
+                return oldValue;
+            } else {
+                return shallowMerge(oldValue, newValue, false);
             }
-            if (isArray(value) || isImmutableList(state)) {
-                state[key] = shallowMerge(value, state[key], depth);
-            } else if (is(value, state[key])) {
-                state[key] = value;
-            }
-        });
-        return state;
-    } else if (isImmutableMap(newState)) {
-        return newState.withMutations(temp => {
-            oldState.forEach((value, key) => {
-                if (!value || !temp.get(key)) {
-                    return;
-                }
-                if (isArray(value) || isImmutableList(value)) {
-                    temp.set(key, shallowMerge(value, temp.get(key), depth));
-                } else if (is(hashCode(value), hashCode(temp.get(key)))) {
-                    temp.set(key, value);
-                }
-            });
-        });
+        }) : oldState;
     } else {
         return newState;
     }
 }
 
 function deepMerge(oldState, newState) {
-    if (!isUndoableState(newState)) {
+    if (!isUndoableState(newState) || oldState === newState) {
         return newState;
     }
 
@@ -136,7 +131,7 @@ function undoableState(state, options) {
     newState.valueOf = function () {
         var target = hashCode(state);
         var present = histories[target].present;
-        return present === newState ? state : options.independent ? present.valueOf() : state;
+        return present === newState ? state : present.valueOf();
     };
     newState.toJS = function () {
         return toJS(this.valueOf());
@@ -150,7 +145,6 @@ function undoableState(state, options) {
 
 // `{target: history}` map
 // TODO Record `action.type`
-// TODO Undoable内的其他model状态的变更也可通过history控制是否batch
 var histories = {};
 
 // 注意：不要直接修改传入对象！！！！
@@ -257,11 +251,8 @@ export function undo(state, action = {}) {
     history.future = [...undoes, ...future];
     history.past = index > 0 ? past.slice(0, index) : [];
 
-    if (options.deep) {
-        return deepMerge(state, present);
-    } else {
-        return shallowMerge(state, present);
-    }
+    var merge = options.deep ? deepMerge : shallowMerge;
+    return merge(state, present);
 }
 
 export function redo(state, action = {}) {
@@ -284,11 +275,8 @@ export function redo(state, action = {}) {
     history.past = [...past, ...redoes];
     history.future = index < future.length ? future.slice(index) : [];
 
-    if (options.deep) {
-        return deepMerge(state, present);
-    } else {
-        return shallowMerge(state, present);
-    }
+    var merge = options.deep ? deepMerge : shallowMerge;
+    return merge(state, present);
 }
 
 export function clear(state, action = {}) {

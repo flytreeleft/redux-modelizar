@@ -7,13 +7,12 @@ import uniq from 'lodash/uniq';
 
 import extend, {getBaseClass} from 'lib.utils.extend';
 import {
-    classify,
-    kebabCase,
-    readonly
+    classify
 } from 'lib.utils.lang';
 
 import forEach from '../utils/forEach';
 import instance from '../utils/instance';
+import isWritable from '../utils/isWritable';
 
 import {
     mutateState
@@ -221,8 +220,9 @@ function proxyMerge(store, target, source, deep, depth, seen) {
     seen.set(source, target);
 
     forEach(source, (value, prop) => {
-        // TODO 忽略`target`的只读属性
-        target[prop] = proxy(store, value, deep, depth, seen);
+        if (isWritable(source, prop)) {
+            target[prop] = proxy(store, value, deep, depth, seen);
+        }
     });
     return target;
 }

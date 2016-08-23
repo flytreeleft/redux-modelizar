@@ -15,7 +15,7 @@ import {
 import undoable from '../undoable';
 
 function mutateByMap(state, action, histories) {
-    return map(state, value => {
+    return map(state, (value) => {
         return mutation(value, action, histories);
     });
 }
@@ -40,13 +40,13 @@ function mutate(state, action, histories) {
     switch (action.type) {
         case MODEL_STATE_MUTATE:
             var target = action.$state;
-            if (!is(state, target)) {
-                break;
-            }
-            if (state !== target && isImmutable(state)) {
-                return state.constructor().mergeDeep(target);
-            } else {
-                return target;
+
+            if (is(state, target)) {
+                if (state !== target && isImmutable(state)) {
+                    return state.constructor().mergeDeep(target);
+                } else {
+                    return target;
+                }
             }
     }
 
@@ -66,9 +66,9 @@ function mutate(state, action, histories) {
 }
 
 export function mutation(state, action = {}, histories) {
-    var history = find(histories, history => {
+    var history = state ? find(histories, (history) => {
         return history.filter(state, action);
-    });
+    }) : null;
 
     if (history) {
         // Dynamically create undoable reducer wrapper.

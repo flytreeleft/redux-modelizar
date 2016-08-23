@@ -32,19 +32,20 @@ import {
  */
 export default function undoable(reducer, options = {}) {
     options = defaults(options, {
-        // only add to history if return `true`
+        // Only add to history if return `true`
         filter: (action, currentState, previousHistory) => true,
         debug: false,
-        // whether or not add all deep state tree to history,
+        // Whether or not add all deep state tree to history,
         // if `false`, only the shallow state will be add to history
         deep: true,
-        // set to a number to turn on a limit for the history:
+        // Set to a number to turn on a limit for the history:
         // * -1: unlimited;
         // * 0: no history;
         // * [1,): limit number;
         limit: -1,
         // Keep the `history` to be redo/undo independently,
-        // the top state's `history` will not change independent history's state.
+        // the top state's history will not change
+        // the independent history's present state.
         // NOTE: The top history should always keep `independent` to `false`.
         independent: false
     });
