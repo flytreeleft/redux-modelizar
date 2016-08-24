@@ -19,8 +19,8 @@ export default function (store, obj, mapping) {
 
             obj[prop] = syncReal(obj[prop], current, {
                 // NOTE: No need deep proxy, `syncReal` will traverse all deeply.
-                pre: obj => proxy(store, obj, false),
-                post: obj => bindHistory(store, obj)
+                pre: (real) => proxy(store, real, false),
+                post: (real) => bindHistory(store, real)
             });
         });
     };

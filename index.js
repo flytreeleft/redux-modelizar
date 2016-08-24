@@ -28,3 +28,9 @@ export {
 export {
     registerFunction
 } from './object/functions';
+export {
+    default as toPlain
+} from './object/toPlain';
+export {
+    default as toReal
+} from './object/toReal';
