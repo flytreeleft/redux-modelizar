@@ -11,6 +11,9 @@ export {
 export {
     default as mappingState
 } from './mappingState';
+export {
+    createState
+} from './state';
 
 export {
     default as modelizar
@@ -26,6 +29,12 @@ export {
     hashCode
 } from './utils/hashCode';
 export {
+    isEqualNode
+} from './state/node';
+export {
+    parseObjClass
+} from './object/sentinels';
+export {
     registerFunction
 } from './object/functions';
 export {
@@ -34,3 +43,6 @@ export {
 export {
     default as toReal
 } from './object/toReal';
+export {
+    default as syncReal
+} from './object/syncReal';

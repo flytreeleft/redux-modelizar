@@ -1,9 +1,4 @@
-import Immutable from 'immutable';
-import invariant from 'invariant';
-
 import defaults from 'lodash/defaults';
-import isObject from 'lodash/isObject';
-import isArray from 'lodash/isArray';
 
 import {
     UNDOABLE_INIT,
@@ -29,6 +24,8 @@ import {
  * - `undoable`只能应用在更新某个model的reducer上，传入的`state`将被视为model的状态；
  * - `state`需包含`equals`、`hashCode`方法，以便于等值比较和Map存储；
  * - 不支持集合类型；
+ * Reference:
+ * - [Redux undo](https://github.com/omnidan/redux-undo);
  */
 export default function undoable(reducer, options = {}) {
     options = defaults(options, {
@@ -51,10 +48,6 @@ export default function undoable(reducer, options = {}) {
     });
 
     return (state, action = {}) => {
-        invariant(Immutable.Map.isMap(state) || (isObject(state) && !isArray(state)),
-            'Expect the parameter "state" is Immutable.Map, Object(except Array).'
-            + ' But received ' + state);
-
         switch (action.type) {
             case UNDOABLE_INIT:
                 // NOTE: Dispatch `UNDOABLE_INIT` when binding history to model.

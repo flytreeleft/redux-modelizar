@@ -1,4 +1,5 @@
 import forEach from './utils/forEach';
+import valueOf from './utils/valueOf';
 
 import proxy from './object/proxy';
 import syncReal from './object/syncReal';
@@ -13,11 +14,11 @@ export default function (store, obj, mapping) {
         forEach(mapping, (getter, prop) => {
             var previous = previousState ? getter(previousState) : null;
             var current = currentState ? getter(currentState) : null;
-            if (previous === current) {
+            if (previous === current || valueOf(previous) === valueOf(current)) {
                 return;
             }
 
-            obj[prop] = syncReal(obj[prop], current, {
+            obj[prop] = syncReal(obj[prop], valueOf(current), {
                 // NOTE: No need deep proxy, `syncReal` will traverse all deeply.
                 pre: (real) => proxy(store, real, false),
                 post: (real) => bindHistory(store, real)

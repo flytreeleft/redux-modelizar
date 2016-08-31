@@ -1,27 +1,6 @@
-import isEqualWith from 'lodash/isEqualWith';
-import isFunction from 'lodash/isFunction';
-import isArray from 'lodash/isArray';
-import isPlainObject from 'lodash/isPlainObject';
+import clone from 'lodash/clone';
 
-import {
-    hashCode
-} from '../utils/hashCode';
-import {
-    isImmutableMap,
-    isImmutableList,
-    is
-} from '../utils/lang';
-import map from '../utils/map';
-
-import isUndoableState, {IS_UNDOABLE_SENTINEL} from './isUndoableState';
-
-function toJS(obj) {
-    return obj && obj.toJS ? obj.toJS() : obj;
-}
-
-function toJSON(obj) {
-    return obj && obj.toJSON ? obj.toJSON() : obj;
-}
+import guid, {GUID_SENTINEL} from '../utils/guid';
 
 function deepEqualState(oldState, newState) {
     // NOTE: The reference will be changed
@@ -32,25 +11,33 @@ function deepEqualState(oldState, newState) {
 }
 
 function shallowEqualState(oldState, newState) {
-    return isEqualWith(oldState, newState, (objVal, otherVal) => {
-        if (isFunction(objVal) && isFunction(otherVal)) {
-            return true;
+    var excludes = ['valueOf'];
+    var oldKeys = oldState.keys().filter((key) => excludes.indexOf(key) >= 0);
+    var newKeys = newState.keys().filter((key) => excludes.indexOf(key) >= 0);
+    if (oldKeys.length !== newKeys.length) {
+        return false;
+    }
+
+    var equal = true;
+    oldState.forEach((oldS, path) => {
+        if (excludes.indexOf(path) >= 0) {
+            return;
         }
-        // If both are array, compare every element,
-        // otherwise compare value.
-        else if (!isArray(objVal) || !isArray(otherVal)) {
-            return is(objVal, otherVal);
+
+        var newS = newState.get(path);
+        if (oldS.isArray() && newS.isArray()
+            && oldS.size() === newS.size()) {
+            oldS.forEach((s, path) => {
+                equal = s.is(newS.get(path));
+                return equal;
+            });
+        } else {
+            equal = oldS.is(newS);
         }
-        // NOTE: Return undefined will continue to compare by `===` deeply.
+        return equal;
     });
-}
 
-function isArrayLike(obj) {
-    return isArray(obj) || isImmutableList(obj);
-}
-
-function isMapLike(obj) {
-    return isPlainObject(obj) || isImmutableMap(obj);
+    return equal;
 }
 
 /**
@@ -66,25 +53,26 @@ function isMapLike(obj) {
  *   if the new one `is` the old one, return the old one;
  */
 function shallowMerge(oldState, newState, deep = true) {
-    if (oldState === newState || !oldState) {
+    if (oldState === newState || !oldState
+        || oldState.valueOf() === newState.valueOf()) {
         return newState;
     }
 
-    if (isArrayLike(oldState) && isArrayLike(newState)) {
-        return map(newState, (value) => {
-            // NOTE: Using owned `find` to fit Array and Immutable.List.
-            var exist = oldState.find((oldValue) => is(oldValue, value));
+    if (oldState.isArray() && newState.isArray()) {
+        return newState.map((state, path) => {
+            // Find exist value by guid
+            var exist = oldState.get(state.valueOf());
 
-            return exist || value;
+            return exist.valueOf() !== undefined ? exist : state;
         });
-    } else if (isMapLike(oldState) && isMapLike(newState)) {
-        return deep ? map(newState, (newValue, key) => {
-            var oldValue = isPlainObject(oldState) ? oldState[key] : oldState.get(key);
+    } else if (oldState.isObject() && newState.isObject()) {
+        return deep ? newState.map((state, path) => {
+            var old = oldState.get(path);
 
-            if (is(newValue, oldValue)) {
-                return oldValue;
+            if (old.is(state)) {
+                return old;
             } else {
-                return shallowMerge(oldValue, newValue, false);
+                return shallowMerge(old, state, false);
             }
         }) : oldState;
     } else {
@@ -93,53 +81,31 @@ function shallowMerge(oldState, newState, deep = true) {
 }
 
 function deepMerge(oldState, newState) {
-    if (!isUndoableState(newState) || oldState === newState) {
+    if (oldState === newState) {
         return newState;
     }
 
-    var state;
-    // NOTE: 这里向状态树返回新的使用原始toJS的状态，
-    // 从而保证undo/redo的model可返回到指定状态，
-    // 也保证了其下级的undoable model可自管理，
-    // 还保证了undo/redo的可重复性（因为历史数据没有发生改变）
-    if (isImmutableMap(newState)) {
-        state = newState.toMap();
-    } else {
-        state = {...newState};
-    }
-    delete state.toJS;
-    delete state.toJSON;
-    delete state.valueOf;
-    delete state[IS_UNDOABLE_SENTINEL];
+    var value = newState.valueOf();
+    delete value.valueOf;
 
-    return state;
+    return newState.set(value);
 }
 
 function undoableState(state, options) {
-    if (isUndoableState(state) || !options.independent) {
+    if (!options.independent) {
         return state;
     }
 
     var newState;
-    if (isImmutableMap(state)) {
-        newState = state.toMap();
-    } else {
-        newState = {...state};
-    }
-
-    newState[IS_UNDOABLE_SENTINEL] = true;
-    newState.valueOf = function () {
-        var target = hashCode(state);
+    var value = state.valueOf();
+    var newValue = clone(value);
+    newValue.valueOf = function () {
+        var target = state.get(GUID_SENTINEL).valueOf();
         var present = histories[target].present;
-        return present === newState ? state : present.valueOf();
-    };
-    newState.toJS = function () {
-        return toJS(this.valueOf());
-    };
-    newState.toJSON = function () {
-        return toJSON(this.valueOf());
+        return present === newState ? value : present.valueOf();
     };
 
+    newState = state.set(newValue);
     return newState;
 }
 
@@ -153,8 +119,8 @@ var histories = {};
  * Invoke this method at any time you need using `history`.
  */
 export function getHistory(target) {
-    var hash = hashCode(target);
-    var history = histories[hash];
+    var id = guid(target);
+    var history = histories[id];
 
     return history ? {
         undoes: [].concat(history.past),
@@ -167,7 +133,7 @@ export function getHistory(target) {
  * @param {Object} state The state of model.
  */
 export function init(state, action, options = {}) {
-    var target = hashCode(state);
+    var target = guid(action.$target);
     if (!target || histories[target]) {
         return state;
     }
@@ -188,7 +154,7 @@ export function init(state, action, options = {}) {
  * @param {Object} state The state of model.
  */
 export function insert(state, action) {
-    var target = hashCode(state);
+    var target = state.get(GUID_SENTINEL).valueOf();
     if (!target || !histories[target]) {
         return state;
     }
@@ -232,9 +198,9 @@ export function insert(state, action) {
 }
 
 export function undo(state, action = {}) {
-    var target = hashCode(action.$target);
+    var target = guid(action.$target);
     if (!target || !histories[target]
-        || target !== hashCode(state)) {
+        || !state.is(action.$target)) {
         return state;
     }
 
@@ -256,9 +222,9 @@ export function undo(state, action = {}) {
 }
 
 export function redo(state, action = {}) {
-    var target = hashCode(action.$target);
+    var target = guid(action.$target);
     if (!target || !histories[target]
-        || target !== hashCode(state)) {
+        || !state.is(action.$target)) {
         return state;
     }
 
@@ -280,9 +246,9 @@ export function redo(state, action = {}) {
 }
 
 export function clear(state, action = {}) {
-    var target = hashCode(action.$target);
+    var target = guid(action.$target);
     if (!target || !histories[target]
-        || target !== hashCode(state)) {
+        || !state.is(action.$target)) {
         return state;
     }
 
@@ -294,9 +260,9 @@ export function clear(state, action = {}) {
 }
 
 export function startBatch(state, action = {}) {
-    var target = hashCode(action.$target);
+    var target = guid(action.$target);
     if (!target || !histories[target]
-        || target !== hashCode(state)) {
+        || !state.is(action.$target)) {
         return state;
     }
 
@@ -307,9 +273,9 @@ export function startBatch(state, action = {}) {
 }
 
 export function endBatch(state, action = {}) {
-    var target = hashCode(action.$target);
+    var target = guid(action.$target);
     if (!target || !histories[target]
-        || target !== hashCode(state)) {
+        || !state.is(action.$target)) {
         return state;
     }
 

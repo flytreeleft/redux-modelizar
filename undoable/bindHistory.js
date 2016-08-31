@@ -1,4 +1,6 @@
-import isObject from 'lodash/isObject';
+import isArray from 'lodash/isArray';
+
+import isPrimitive from '../utils/isPrimitive';
 
 import {
     getHistory
@@ -13,10 +15,11 @@ import {
 } from './actions';
 
 export default function bindHistory(store, obj) {
-    if (!isObject(obj) || obj.history) {
+    if (isPrimitive(obj) || isArray(obj) || obj.history) {
         return obj;
     }
 
+    // TODO 在更新Store时注册model的history
     store.dispatch(init(obj));
     if (!getHistory(obj)) {
         return obj;

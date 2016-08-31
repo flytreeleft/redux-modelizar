@@ -16,7 +16,7 @@ import {
     mutation
 } from './reducer';
 import {
-    getObjClass
+    parseObjClass
 } from '../object/sentinels';
 
 export default function modelizar(reducer, options = {}) {
@@ -34,7 +34,7 @@ export default function modelizar(reducer, options = {}) {
 
         if (!isFunction(filter) && isFunction(history.type)) {
             filter = (state, action) => {
-                var Cls = getObjClass(state);
+                var Cls = parseObjClass(state.valueOf());
                 return Cls ? new Cls() instanceof history.type : false;
             };
         } else {
@@ -63,7 +63,7 @@ export default function modelizar(reducer, options = {}) {
         } else {
             switch (action.type) {
                 case MODEL_STATE_MUTATE:
-                    return mutation(state, action, histories);
+                    return mutation(state, action);
             }
         }
         return reducer(state, action);
