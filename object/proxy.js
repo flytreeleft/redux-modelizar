@@ -220,7 +220,7 @@ function proxyMerge(store, target, source, deep, depth, seen) {
     seen.set(source, target);
 
     forEach(source, (value, prop) => {
-        if (isWritable(source, prop)) {
+        if (isWritable(target, prop)) {
             target[prop] = proxy(store, value, deep, depth, seen);
         }
     });

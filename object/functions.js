@@ -1,15 +1,13 @@
-import find from 'lodash/find';
-import isFunction from 'lodash/isFunction';
-
 var gid = 1;
-const fnMap = {};
+const fnMap = new Map();
 
 export function getFunctionName(fn) {
-    var fnName = find(Object.keys(fnMap), name => fn === fnMap[name]);
+    var fnName = fnMap.get(fn);
 
     if (!fnName) {
         fnName = (fn.name || 'Anonymous') + `@${gid++}`;
         fnMap[fnName] = fn;
+        fnMap.set(fn, fnName);
     }
     return fnName;
 }
@@ -29,5 +27,8 @@ export function getFunctionByName(fnName) {
 
 // TODO 可注册模型class名称，建立name和function的映射关系，且可在运行中动态注册。从而确保在任何时候均可准确还原到任意点的状态
 export function registerFunction(name, fn) {
-    name && isFunction(fn) && (fnMap[name] = fn);
+    if (name && fn instanceof Function) {
+        fnMap[name] = fn;
+        fnMap.set(fn, name);
+    }
 }

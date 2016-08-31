@@ -1,174 +1,109 @@
-import isObject from 'lodash/isObject';
 import isArray from 'lodash/isArray';
-import isDate from 'lodash/isDate';
-import isFunction from 'lodash/isFunction';
-import isRegExp from 'lodash/isRegExp';
 
-import {
-    isImmutableList,
-    isImmutableMap
-} from '../utils/lang';
-import forEach from '../utils/forEach';
-import {
-    OBJECT_HASH_CODE_SENTINEL,
-    hashCode,
-    setHashCode
-} from '../utils/hashCode';
-import {
-    getFunctionName
-} from './functions';
+import guid from '../utils/guid';
+import valueOf from '../utils/valueOf';
+import isPrimitive from '../utils/isPrimitive';
 
 import {
     OBJECT_CLASS_SENTINEL,
-    IS_REFERENCE_SENTINEL,
-    IS_FUNCTION_SENTINEL,
-    IS_DATE_SENTINEL,
-    IS_REG_EXP_SENTINEL
+    isRefObj,
+    createRefObj,
+    createFunctionObj,
+    createDateObj,
+    createRegExpObj,
+    createClassObj
 } from './sentinels';
 
-function createRefObj(hash) {
-    return {
-        [IS_REFERENCE_SENTINEL]: true,
-        [OBJECT_HASH_CODE_SENTINEL]: hash
-    };
-}
-
-function createObj(ctor, hash) {
-    return {
-        [OBJECT_CLASS_SENTINEL]: getFunctionName(ctor),
-        [OBJECT_HASH_CODE_SENTINEL]: hash,
-        equals: function (other) {
-            if (!other) {
-                return false;
-            } else if (isFunction(other.hashCode)) {
-                return this.hashCode() === other.hashCode();
-            } else if (!isImmutableMap(other)) {
-                return this.hashCode() === hashCode(other);
-            }
-        },
-        hashCode: () => hash
-    };
-}
-
 /**
- * Check if the `prop` of `obj` is an object reference or not.
+ * NOTE: 仅处理自上而下存在的循环引用
+ *
+ * TODO 如何避免对已Plain的Object再次Plain？
+ *
+ * @param {*} [source]
+ * @param {Function/Object} [processor]
+ * @param {Function} [processor.pre] The pre-processor
+ * @param {Function} [processor.post] The post-processor
  */
-function isRefProp(obj, prop, refProps) {
-    var props = [prop];
-    var proto = obj;
-    // Check all inherited class
-    while (proto && Object.getPrototypeOf(proto).constructor !== Object) {
-        proto = Object.getPrototypeOf(proto);
-
-        var clsName = proto.constructor.name;
-        if (clsName) {
-            props.push(`${clsName}#${prop}`);
-        }
+export default function toPlain(source, processor = (obj) => obj) {
+    if (isPrimitive(source)) {
+        return valueOf(source);
     }
 
-    return props.filter(prop => refProps.indexOf(prop) >= 0).length > 0;
-}
+    // NOTE: Recursion will cause heavy performance problem
+    // and 'Maximum call stack size' error.
+    var root;
+    // {[sourceObject]: guid(sourceObjectCopy)}
+    var refs = new Map();
+    // [topDstRefObjCount, topDst, topDstProp, src]
+    var stack = [-1, undefined, undefined, source];
+    var src;
+    var srcId;
+    var dst; // Target object for receiving source properties.
+    var topDst; // Top object of target object.
+    var topDstProp; // Property of top object.
+    var topDstRefObjCount; // How many objects are referred by top object?
+    var excludeKeys = [OBJECT_CLASS_SENTINEL];
+    while (stack.length > 0) {
+        src = valueOf(stack.pop());
+        srcId = guid(src);
+        topDstProp = stack.pop();
+        topDst = stack.pop();
+        topDstRefObjCount = stack.pop();
 
-function plainRegExp(reg, refProps, refs) {
-    return {
-        [IS_REG_EXP_SENTINEL]: true,
-        exp: reg.toString(),
-        valueOf: function () {
-            return this.exp;
-        }
-    };
-}
-
-function plainDate(date, refProps, refs) {
-    return {
-        [IS_DATE_SENTINEL]: true,
-        time: date.getTime(),
-        valueOf: function () {
-            return this.time;
-        }
-    };
-}
-
-function plainFunction(fn, refProps, refs) {
-    return {
-        [IS_FUNCTION_SENTINEL]: true,
-        name: getFunctionName(fn),
-        valueOf: function () {
-            return this.name;
-        }
-    };
-}
-
-function plainImmutable(obj, refProps, refs) {
-    return obj.map(value => toPlain(value, refProps, refs));
-}
-
-function plainArray(array, refProps, refs) {
-    var hash = refs.get(array);
-    var newArray = array.map(value => toPlain(value, refProps, refs));
-
-    setHashCode(newArray, hash);
-
-    return newArray;
-}
-
-function plainObject(obj, refProps, refs) {
-    var excludeProps = [OBJECT_HASH_CODE_SENTINEL,
-                        OBJECT_CLASS_SENTINEL,
-                        'equals', 'hashCode', 'toJS',
-                        'toJSON', 'toObject', 'toArray'];
-    var objHash = refs.get(obj);
-    var po = createObj(obj.constructor, objHash);
-
-    forEach(obj, (value, prop) => {
-        if (excludeProps.indexOf(prop) >= 0) {
-            return;
+        if ([null, undefined].indexOf(refs.get(src)) < 0) {
+            throw new Error('Cycle reference detected:'
+                            + ` ${topDst[OBJECT_CLASS_SENTINEL]}.${topDstProp} = ${src}`);
         }
 
-        if (isObject(value) && isRefProp(obj, prop, refProps)) {
-            let valueHash = hashCode(value);
-            po[prop] = createRefObj(valueHash);
+        dst = isArray(src) ? new Array(src.length) : createClassObj(src);
+        refs.set(src, guid(dst, srcId));
+
+        // Pre-processor
+        if (processor && (processor.pre || processor) instanceof Function) {
+            dst = (processor.pre || processor)(dst, topDst, topDstProp);
+        }
+        if (topDst === undefined) {
+            root = topDst = dst;
         } else {
-            po[prop] = toPlain(value, refProps, refs);
+            topDst[topDstProp] = dst;
         }
-    });
+        // Post-processor
+        if (topDstRefObjCount === 0 && processor && processor.post instanceof Function) {
+            topDst = processor.post(topDst);
+        }
+        // Pre-processor may return a primitive value.
+        if (isRefObj(dst) || isPrimitive(dst)) {
+            continue;
+        }
 
-    return po;
-}
+        var refObjCount = 0;
+        Object.keys(src).forEach((key) => {
+            if (excludeKeys.indexOf(key) >= 0) {
+                return;
+            }
 
-/**
- * @param {*} [obj]
- * @param {String[]} [refProps] Like: `parent`, `Link#prev`, `Stack#next`
- */
-export default function toPlain(obj, refProps = [], refs = new Map()) {
-    if (!isObject(obj)) {
-        return obj;
+            var value = valueOf(src[key]);
+            if (isPrimitive(value)) {
+                dst[key] = value;
+                return;
+            }
+
+            var valueId = refs.get(value);
+            if (valueId) {
+                value = createRefObj(valueId);
+            }
+            else if (value instanceof Function) {
+                value = createFunctionObj(value);
+            }
+            else if (value instanceof Date) {
+                value = createDateObj(value);
+            }
+            else if (value instanceof RegExp) {
+                value = createRegExpObj(value);
+            }
+            stack.push(refObjCount++, dst, key, value);
+        });
     }
 
-    if ([null, undefined].indexOf(refs.get(obj)) < 0) {
-        throw new Error('Cycle reference is detected,'
-                        + ' please add it to "refProps": '
-                        + obj);
-    } else {
-        refs.set(obj, hashCode(obj));
-    }
-
-    if (isArray(obj)) {
-        return plainArray(obj, refProps, refs);
-    }
-    else if (isImmutableList(obj) || isImmutableMap(obj)) {
-        return plainImmutable(obj, refProps, refs);
-    }
-    else if (isFunction(obj)) {
-        return plainFunction(obj, refProps, refs);
-    }
-    else if (isDate(obj)) {
-        return plainDate(obj, refProps, refs);
-    }
-    else if (isRegExp(obj)) {
-        return plainRegExp(obj, refProps, refs);
-    }
-    else {
-        return plainObject(obj, refProps, refs);
-    }
+    return root;
 }

@@ -1,23 +1,8 @@
-import isObject from 'lodash/isObject';
-import isArray from 'lodash/isArray';
-import isString from 'lodash/isString';
-import isFunction from 'lodash/isFunction';
-
-import {
-    isImmutableList,
-    isImmutableMap,
-    isPrimitive
-} from '../utils/lang';
-import forEach from '../utils/forEach';
 import instance from '../utils/instance';
-import {
-    hashCode,
-    setHashCode
-} from '../utils/hashCode';
+import guid from '../utils/guid';
 import isWritable from '../utils/isWritable';
-import {
-    getFunctionByName
-} from './functions';
+import valueOf from '../utils/valueOf';
+import isPrimitive from '../utils/isPrimitive';
 
 import {
     OBJECT_CLASS_SENTINEL,
@@ -25,121 +10,97 @@ import {
     isFunctionObj,
     isDateObj,
     isRegExpObj,
-    isUndoableObj,
-    getObjClass
+    parseObjClass,
+    parseRefKey,
+    parseFunction,
+    parseDate,
+    parseRegExp
 } from './sentinels';
 
-export function realFunction(obj, processor, refs) {
-    var fnName = obj.name;
-
-    return getFunctionByName(fnName);
-}
-
-export function realDate(obj, processor, refs) {
-    var time = obj.time;
-
-    return new Date(time);
-}
-
-export function realRegExp(obj, processor, refs) {
-    var exp = obj.exp;
-
-    if (isString(exp) && /^\/.+\/([igm]*)$/.test(exp)) {
-        // NOTE: Avoid xss attack
-        return new Function(`return ${exp};`)();
-    } else {
-        return null;
-    }
-}
-
-export function realUndoableState(obj, processor, refs) {
-    return toReal(obj.valueOf(), processor, refs);
-}
-
-export function realImmutableMap(obj, processor, refs) {
-    return realObject(obj, processor, refs, Object);
-}
-
-export function realImmutableList(obj, processor, refs) {
-    return realArray(obj, processor, refs);
-}
-
-export function realArray(obj, processor, refs) {
-    var hash = hashCode(obj);
-    var ro = [];
-
-    setHashCode(ro, hash);
-    refs.set(hash, ro);
-
-    forEach(obj, value => {
-        var real = toReal(value, processor, refs);
-        ro.push(real);
-    });
-
-    return ro;
-}
-
-export function realObject(obj, processor, refs, candidateCtor) {
-    var Ctor = getObjClass(obj) || candidateCtor;
-    if (!Ctor) {
-        throw new Error(`No registered Class found for ${obj}.`
-                        + 'Please make sure this object is converted by #toPlain(obj).');
+export default function toReal(source, processor, refs = new Map()/*{[guid(sourceObject)]: realObject}*/) {
+    if (isPrimitive(source)) {
+        return valueOf(source);
     }
 
-    var hash = hashCode(obj);
-    var ro = instance(Ctor);
+    // NOTE: Recursion will cause heavy performance problem
+    // and 'Maximum call stack size' error.
+    var root;
+    // [roTopRefObjCount, roTop, roTopProp, src]
+    var stack = [-1, undefined, undefined, source];
+    var src;
+    var srcId;
+    var ro; // Real object mapping source object.
+    var roTop; // Top object of real object.
+    var roTopProp; // Property of top object.
+    var roTopRefObjCount; // How may objects are referred by top object?
+    var ctor;
+    var excludeKeys = [OBJECT_CLASS_SENTINEL];
+    while (stack.length > 0) {
+        src = valueOf(stack.pop());
+        srcId = guid(src);
+        roTopProp = stack.pop();
+        roTop = stack.pop();
+        roTopRefObjCount = stack.pop();
 
-    if (processor && isFunction(processor.pre || processor)) {
-        ro = (processor.pre || processor)(ro);
-    }
-    setHashCode(ro, hash);
-    refs.set(hash, ro);
+        var existedRef = refs.has(srcId);
+        if (existedRef) {
+            ro = refs.get(srcId);
+        } else {
+            ctor = parseObjClass(src);
+            if (!ctor) {
+                throw new Error(`No registered Class found for ${src}.`
+                                + 'Please make sure this object is converted by #toPlain(obj).');
+            }
 
-    var excludeProps = [OBJECT_CLASS_SENTINEL,
-                        'equals', 'hashCode', 'toJS',
-                        'toJSON', 'toObject', 'toArray'];
-    forEach(obj, (value, prop) => {
-        if (excludeProps.indexOf(prop) < 0 && isWritable(obj, prop)) {
-            ro[prop] = toReal(value, processor, refs);
+            ro = instance(ctor);
+            refs.set(guid(ro, srcId), ro);
+            // Pre-processor
+            if (processor && (processor.pre || processor) instanceof Function) {
+                ro = (processor.pre || processor)(ro, roTop, roTopProp);
+            }
         }
-    });
 
-    if (processor && isFunction(processor.post)) {
-        ro = processor.post(ro);
-    }
-    return ro;
-}
+        if (roTop === undefined) {
+            root = roTop = ro;
+        } else {
+            roTop[roTopProp] = ro;
+        }
+        // Post-processor
+        if (roTopRefObjCount === 0 && processor && processor.post instanceof Function) {
+            roTop = processor.post(roTop);
+        }
+        // Pre-processor may return a primitive value.
+        if (existedRef || isPrimitive(ro)) {
+            continue;
+        }
 
-export default function toReal(obj, processor, refs = new Map()) {
-    if (!isObject(obj) || isPrimitive(obj)) {
-        return obj;
+        var refObjCount = 0;
+        Object.keys(src).forEach((key) => {
+            if (excludeKeys.indexOf(key) >= 0 || !isWritable(ro, key)) {
+                return;
+            }
+
+            var value = valueOf(src[key]);
+            if (isPrimitive(value)) {
+                ro[key] = value;
+            }
+            else if (isRefObj(value)) {
+                ro[key] = refs.get(parseRefKey(value));
+            }
+            else if (isFunctionObj(value)) {
+                ro[key] = parseFunction(value);
+            }
+            else if (isDateObj(value)) {
+                ro[key] = parseDate(value);
+            }
+            else if (isRegExpObj(value)) {
+                ro[key] = parseRegExp(value);
+            }
+            else {
+                stack.push(refObjCount++, ro, key, value);
+            }
+        });
     }
 
-    if (isArray(obj)) {
-        return realArray(obj, processor, refs);
-    }
-    else if (isUndoableObj(obj)) {
-        return realUndoableState(obj, processor, refs);
-    }
-    else if (isRefObj(obj)) {
-        return refs.get(hashCode(obj));
-    }
-    else if (isFunctionObj(obj)) {
-        return realFunction(obj, processor, refs);
-    }
-    else if (isDateObj(obj)) {
-        return realDate(obj, processor, refs);
-    }
-    else if (isRegExpObj(obj)) {
-        return realRegExp(obj, processor, refs);
-    }
-    else if (isImmutableList(obj)) {
-        return realImmutableList(obj, processor, refs);
-    }
-    else if (isImmutableMap(obj)) {
-        return realImmutableMap(obj, processor, refs);
-    }
-    else {
-        return realObject(obj, processor, refs);
-    }
+    return root;
 }
