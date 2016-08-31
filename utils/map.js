@@ -1,11 +1,6 @@
-import isObject from 'lodash/isObject';
 import isArray from 'lodash/isArray';
-import isFunction from 'lodash/isFunction';
-import forEach from 'lodash/forEach';
 
-import {
-    isImmutable
-} from './lang';
+import isPrimitive from './isPrimitive';
 
 /**
  * Do map and return new object.
@@ -13,23 +8,26 @@ import {
  * NOTE: If no value is changed, the original `obj` will be returned.
  */
 export default function map(obj, mapper) {
-    if (!obj || !isFunction(mapper)) {
+    if (isPrimitive(obj) || !(mapper instanceof Function)) {
         return obj;
     }
 
     let changed = false;
     let newObj;
-    if (isArray(obj) || isImmutable(obj)) {
+    if (isArray(obj)) {
         newObj = obj.map((value, key) => {
             var newValue = mapper(value, key);
             !changed && (changed = newValue !== value);
 
             return newValue;
         });
-    } else if (isObject(obj)) {
+    } else {
         newObj = {};
-        forEach(obj, (value, key) => {
+
+        Object.keys(obj).forEach((key) => {
+            var value = obj[key];
             var newValue = mapper(value, key);
+
             !changed && (changed = newValue !== value);
 
             newObj[key] = newValue;
