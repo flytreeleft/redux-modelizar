@@ -1,5 +1,4 @@
 import isArray from 'lodash/isArray';
-import mergeWith from 'lodash/mergeWith';
 
 import {
     GUID_SENTINEL,
@@ -9,6 +8,7 @@ import isPrimitive from '../utils/isPrimitive';
 import toPlain from '../object/toPlain';
 import traverse from '../object/traverse';
 import {
+    OBJECT_CLASS_SENTINEL,
     isRefObj,
     createRefObj
 } from '../object/sentinels';
@@ -34,41 +34,28 @@ export function cloneNode(node) {
  * @param {String/Number/Symbol} [path] The reference property name of `topNode`.
  */
 export function initNode(node, pathLink, topNode = null, path = null) {
-    var isRefTopNode = (node, topNode) => {
-        var nodeId = guid(node);
-        var isTopRef = false;
+    var isRefTopNode = (node) => {
         // Check from the mount point `topNode`
-        if (nodeId && topNode) {
-            pathLink.walk(topNode, (topNodeId) => {
-                if (topNodeId === nodeId) {
-                    isTopRef = true;
-                }
-            });
-        }
-        return isTopRef;
+        return topNode && !isPrimitive(node) && !!pathLink.path(topNode, node);
     };
 
-    var newNode;
-    if (Object.isFrozen(node)) {
-        newNode = traverse(node, (node, topNode, path) => {
-            if (!isPrimitive(node)) {
-                pathLink.add(node, topNode, path);
+    var tag = 'Initial node - toPlain';
+    // console.profile(tag);
+    // console.time(tag);
+    var newNode = toPlain(node, {
+        pre: (node, topNode, path) => {
+            // Check if the sub node tree
+            // contains top node references or not.
+            if (!isRefObj(node) && isRefTopNode(node)) {
+                node = createRefObj(guid(node));
             }
-        });
-    } else {
-        newNode = toPlain(node, {
-            pre: (node, topNode, path) => {
-                // Check if the sub node tree
-                // contains top node references or not.
-                if (!isRefObj(node) && isRefTopNode(node, topNode)) {
-                    node = createRefObj(guid(node));
-                }
-                pathLink.add(node, topNode, path);
-                return node;
-            },
-            post: (node) => Object.freeze(node)
-        });
-    }
+            pathLink.add(node, topNode, path);
+            return node;
+        },
+        post: (node) => Object.freeze(node)
+    });
+    // console.timeEnd(tag);
+    // console.profileEnd();
     pathLink.add(newNode, topNode, path);
 
     return newNode;
@@ -174,7 +161,9 @@ export function copyNodeByPath(root, pathLink, paths, targetNodeProcessor, pathN
         return root;
     }
     // Process the target node.
-    var processedNode = targetNodeProcessor ? targetNodeProcessor(node, topNode, path) : undefined;
+    var processedNode = targetNodeProcessor
+        ? targetNodeProcessor(node, topNode, path, [...paths])
+        : undefined;
     if (processedNode !== undefined && processedNode !== node) {
         node = processedNode;
     } else { // No mutation
@@ -206,7 +195,9 @@ export function copyNodeByPath(root, pathLink, paths, targetNodeProcessor, pathN
                 topNode[path] = node;
             }
             // Process the path node.
-            processedNode = pathNodeProcessor ? pathNodeProcessor(node, topNode, path) : undefined;
+            processedNode = pathNodeProcessor
+                ? pathNodeProcessor(node, topNode, path, paths.slice(0, pathNodes.length))
+                : undefined;
             pathLink.remove(node);
             if (processedNode !== undefined && processedNode !== node) {
                 node = processedNode;
@@ -215,6 +206,7 @@ export function copyNodeByPath(root, pathLink, paths, targetNodeProcessor, pathN
                 }
             }
             pathLink.add(node, topNode, path);
+            Object.freeze(node);
             // Set the processed node to top.
             if (topNode) {
                 topNode[path] = node;
@@ -239,54 +231,79 @@ export function copyNodeByPath(root, pathLink, paths, targetNodeProcessor, pathN
  * @param {Boolean} [deep=false]
  */
 export function mergeNode(target, pathLink, source, deep = false) {
-    if (target === source
-        || isPrimitive(target) || isPrimitive(source)
-        || (isArray(target) && !isArray(source))
-        || (!isArray(target) && isArray(source))) {
+    if (target === source) {
         return source;
+    } else if (isPrimitive(target) || isPrimitive(source)
+               || (isArray(target) && !isArray(source))
+               || (!isArray(target) && isArray(source))) {
+        return initNode(source, pathLink);
     }
 
     var changed = false;
     var targetCopy = cloneNode(target);
-
-    mergeWith(targetCopy, source, (objVal, srcVal, key) => {
-        if (!isEqualNode(objVal, srcVal)) {
-            changed = true;
-
-            pathLink.remove(objVal);
-            if (!deep) {
-                srcVal = initNode(srcVal, pathLink, targetCopy, key);
-            } else {
-                srcVal = mergeNode(objVal, pathLink, srcVal, deep);
-                pathLink.add(srcVal, targetCopy, key);
-            }
+    var refs = new Map([[source, targetCopy]]);
+    traverse(source, (src, top, path, srcIndex) => {
+        if (top === undefined) {
+            return;
         }
-        return srcVal;
+
+        var dstTop = refs.get(top);
+        var dst = dstTop[path];
+        if (src === dst) {
+            return false;
+        } else if (!deep
+                   || isPrimitive(src) || isPrimitive(dst)
+                   || (isArray(src) && !isArray(dst))
+                   || (!isArray(src) && isArray(dst))) {
+            changed = true;
+            dstTop[path] = initNode(src, pathLink, dstTop, path);
+            srcIndex === 0 && Object.freeze(dstTop);
+            return false;
+        }
+
+        dstTop[path] = dst = cloneNode(dst);
+        srcIndex === 0 && Object.freeze(dstTop);
+        refs.set(src, dst);
     });
 
     return changed ? targetCopy : target;
 }
 
 export function isEqualNode(node, other) {
-    if (node === other) {
-        return true;
-    } else if (isPrimitive(node) || isPrimitive(other)
-               || (isArray(node) && !isArray(other))
-               || (!isArray(node) && isArray(other))) {
-        return false;
-    }
+    var isEqual = true;
+    var excludeKeys = [GUID_SENTINEL, OBJECT_CLASS_SENTINEL];
+    var refs = new Map([[node, other]]);
 
-    var nodeKeys = Object.keys(node).filter((key) => key !== GUID_SENTINEL);
-    var otherKeys = Object.keys(other).filter((key) => key !== GUID_SENTINEL);
-    if (nodeKeys.length !== otherKeys.length) {
-        return false;
-    }
-
-    for (var i = 0; i < nodeKeys.length; i++) {
-        var key = nodeKeys[i];
-        if (!isEqualNode(node[key], other[key])) {
+    traverse(node, (left, leftTop, path) => {
+        if (excludeKeys.indexOf(path) >= 0) {
             return false;
         }
-    }
-    return true;
+
+        var right;
+        if (leftTop === undefined) {
+            right = refs.get(left);
+        } else {
+            right = refs.get(leftTop)[path];
+        }
+
+        if (left === right) {
+            return false;
+        } else if (isPrimitive(left)
+                   || isPrimitive(right)
+                   || (isArray(left) && !isArray(right))
+                   || (!isArray(left) && isArray(right))) {
+            isEqual = false;
+            return false;
+        } else {
+            var leftKeys = Object.keys(left).filter((key) => excludeKeys.indexOf(key) < 0);
+            var rightKeys = Object.keys(right).filter((key) => excludeKeys.indexOf(key) < 0);
+            if (leftKeys.length !== rightKeys.length) {
+                isEqual = false;
+                return false;
+            }
+        }
+
+        refs.set(left, right);
+    });
+    return isEqual;
 }

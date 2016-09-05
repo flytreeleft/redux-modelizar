@@ -3,6 +3,7 @@ import isString from 'lodash/isString';
 import guid from '../utils/guid';
 import isNullOrUndefined from '../utils/isNullOrUndefined';
 import isPrimitive from '../utils/isPrimitive';
+import traverse from '../object/traverse';
 
 function extractId(nodeOrId) {
     if (isString(nodeOrId)) {
@@ -12,145 +13,161 @@ function extractId(nodeOrId) {
     }
 }
 
-function PathLink() {
-    this.link = new Map();
-    this.rootNode = null;
+function PathLink(parent) {
+    this._parent = parent;
+    this._link = new Map();
+    this._root = null;
 }
 
-/**
- * If it's an atomic node or not.
- */
-PathLink.prototype.isAtomic = function () {
-    return isPrimitive(this.rootNode);
-};
-
 PathLink.prototype.add = function (node, topNode, path) {
+    if (isPrimitive(node)) {
+        return this;
+    }
+
     var nodeId = guid(node);
     var topNodeId = guid(topNode);
+    this._link.set(nodeId, {
+        top: topNodeId,
+        path: path
+    });
 
-    if (isNullOrUndefined(topNode) && isNullOrUndefined(path)) {
-        this.root(node);
-    } else if (nodeId && !this.isAtomic()) {
-        this.link.set(nodeId, {
-            top: topNodeId,
-            path: path
-        });
-    }
     return this;
 };
 
-/** Set root node */
+PathLink.prototype.replace = function (oldNode, newNode) {
+    var lnk = this.get(oldNode);
+    this.remove(oldNode);
+
+    if (!isPrimitive(newNode)) {
+        var newNodeId = guid(newNode);
+        this._link.set(newNodeId, lnk);
+    }
+};
+
+PathLink.prototype.remove = function (node) {
+    if (isPrimitive(node)) {
+        return this;
+    }
+
+    var nodeId = guid(node);
+    // Bring node to leaf
+    this._link.set(nodeId, {
+        top: null,
+        path: null
+    });
+
+    return this;
+};
+
 PathLink.prototype.root = function (root) {
-    if (isPrimitive(root)) {
-        this.rootNode = root;
+    if (!isPrimitive(root)) {
+        this._root = guid(root);
     } else {
-        var rootId = guid(this.rootNode = {}, guid(root));
-        // NOTE: Keep the existing link of root for
-        // walking to the top of the original tree.
-        if (!this.link.has(rootId)) {
-            this.link.set(rootId, {
-                top: null,
-                path: null
-            });
-        }
+        this._link.clear();
     }
 
-    return this;
-};
-
-PathLink.prototype.remove = function (nodeOrId) {
-    var id = extractId(nodeOrId);
-
-    if (id && !this.isAtomic()) {
-        this.link.delete(id);
-    }
     return this;
 };
 
 PathLink.prototype.get = function (nodeOrId) {
-    var id = this.isAtomic() ? null : extractId(nodeOrId);
+    var nodeId = extractId(nodeOrId);
 
-    return id && this.link.get(id);
+    return this._link.get(nodeId)
+           || (this._parent
+               && this._parent.get(this._root)
+               && this._parent.get(nodeId));
 };
 
-PathLink.prototype.exist = function (nodeOrId) {
-    return !!this.get(nodeOrId);
+PathLink.prototype.has = function (nodeOrId) {
+    return !!this.path(nodeOrId);
 };
 
 /**
- * @return {Array/undefined} The path from root to specified node.
+ * @return {Array/undefined} The path from root to the specified node.
  *          If node doesn't exist, return `undefined`.
  */
-PathLink.prototype.path = function (nodeOrId) {
-    var lnk = this.get(nodeOrId);
+PathLink.prototype.path = function (start, end = this._root) {
+    if (isPrimitive(start) || isPrimitive(end)) {
+        return;
+    }
+
+    var lnk = this.get(start);
     if (!lnk) {
         return;
     }
 
-    var rootLnk = this.get(this.rootNode);
+    var endLnk = this.get(end);
     var paths = [];
-    while (lnk && lnk !== rootLnk) {
+    while (lnk && lnk !== endLnk) {
         var path = lnk.path;
-        !isNullOrUndefined(path) && paths.unshift(path);
+        // If it's a broken path or can not reach to current root,
+        // return `undefined`.
+        if (isNullOrUndefined(path)) {
+            return;
+        }
 
+        paths.unshift(path);
         lnk = this.get(lnk.top);
     }
-
     return paths;
 };
 
-PathLink.prototype.walk = function (nodeOrId, pathWalker) {
-    var lnk = this.get(nodeOrId);
-    if (!lnk) {
-        return;
-    }
-
-    while (lnk) {
-        pathWalker && pathWalker(lnk.top, lnk.path);
-
-        lnk = this.get(lnk.top);
-    }
-};
-
 PathLink.prototype.clear = function () {
-    this.link.clear();
-    this.rootNode = null;
+    this._root = null;
+    this._parent = null;
+    this._link.clear();
 
     return this;
 };
 
-PathLink.prototype.clone = function () {
-    var pathLink = new PathLink();
+PathLink.prototype.branch = function (node = this._root) {
+    var branch = new PathLink(this);
 
-    this.link.forEach((lnk, id) => {
-        pathLink.link.set(id, lnk);
-    });
-    pathLink.rootNode = this.rootNode;
+    if (node === this._root) {
+        branch._root = node;
+    } else if (!isPrimitive(node)
+               && !this.get(node)) {
+        // New node as root
+        branch.add(node, null, null);
+    } else {
+        branch.root(node);
+    }
 
-    return pathLink;
+    return branch;
 };
 
-PathLink.prototype.mount = function (target, node) {
-    var nodeId = extractId(node);
-    var mpLnk = this.get(nodeId);
-    if (!mpLnk) {
-        return;
+PathLink.prototype.isBranchOf = function (pathLink) {
+    var parent = this._parent;
+    while (parent) {
+        if (parent === pathLink) {
+            return true;
+        }
     }
+    return false;
+};
 
-    this.link.delete(nodeId);
-
-    if (!target.isAtomic()) {
-        var targetRootId = guid(target.rootNode);
-
-        target.link.forEach((lnk, id) => {
-            var paths = target.path(id);
-
-            if (paths && id !== targetRootId) {
-                this.link.set(id, lnk);
+/**
+ * @param {PathLink} sourcePathLink
+ * @param {*} sourceRoot
+ * @param {Object} mountNode
+ */
+PathLink.prototype.mount = function (sourcePathLink, sourceRoot, mountNode) {
+    if (isPrimitive(sourceRoot)) {
+        // For leaf node, no need to update path link.
+        return this;
+    } else if (sourcePathLink._parent === this) {
+        sourcePathLink._link.forEach((lnk, nodeId) => {
+            this._link.set(nodeId, lnk);
+        });
+    } else {
+        traverse(sourceRoot, (src, top, path) => {
+            if (top !== undefined) {
+                this.add(src, top, path);
             }
         });
-        this.link.set(targetRootId, mpLnk);
     }
+    this.replace(mountNode, sourceRoot);
+
     return this;
 };
 

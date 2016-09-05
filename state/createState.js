@@ -1,5 +1,4 @@
 import isArray from 'lodash/isArray';
-import isObject from 'lodash/isObject';
 import isFunction from 'lodash/isFunction';
 import isString from 'lodash/isString';
 import forEach from 'lodash/forEach';
@@ -9,8 +8,13 @@ import isNullOrUndefined from '../utils/isNullOrUndefined';
 import isPrimitive from '../utils/isPrimitive';
 import valueOf from '../utils/valueOf';
 import map from '../utils/map';
+import {
+    GUID_SENTINEL
+} from '../utils/guid';
+import {
+    OBJECT_CLASS_SENTINEL
+} from '../object/sentinels';
 
-import guid from '../utils/guid';
 import PathLink from './PathLink';
 import {
     initNode,
@@ -59,20 +63,21 @@ function setNode(root, pathLink, paths, value) {
 
 var nodeUpdater = (updater, pathLink, node, topNode, path) => {
     if (!updater
-        || (!isNullOrUndefined(path) && !isNullOrUndefined(topNode)
+        || (!isNullOrUndefined(path)
+            && !isNullOrUndefined(topNode)
             && !(path in topNode))) {
         return;
     }
 
-    var nodePathLink = pathLink.clone().root(node);
+    var nodePathLink = pathLink.branch(node);
     var state = createState(node, nodePathLink, true);
     var newState = updater(state, path);
-    var newNode = newState !== undefined ? valueOf(newState) : node;
 
-    if (!isNullOrUndefined(newNode) && newNode !== node) {
-        pathLink.mount(newState._pathLink, node);
+    if (newState && !state.same(newState)) {
+        var newNode = valueOf(newState);
+        newState._mountPathLinkAt(pathLink, newNode, node);
+        return newNode;
     }
-    return newNode;
 };
 /**
  * @param {Object} root
@@ -106,47 +111,59 @@ function removeNode(root, pathLink, paths) {
     });
 }
 
+const excludePaths = [GUID_SENTINEL, OBJECT_CLASS_SENTINEL];
 function mapNode(root, pathLink, paths, mapper) {
     if (!paths || !isFunction(mapper)) {
         return root;
     }
 
     return copyNodeByPath(root, pathLink, paths, (mappedNode, topNode, path) => {
-        return map(mappedNode, (value, key) => {
-            var valuePathLink = pathLink.clone().root(value);
-            var state = createState(value, valuePathLink, true);
-            var newState = mapper(state, key);
-            var subNode = newState !== undefined ? valueOf(newState) : value;
-
-            if (!isNullOrUndefined(subNode) && subNode !== value) {
-                pathLink.mount(newState._pathLink, value);
+        return map(mappedNode, (node, key) => {
+            if (excludePaths.indexOf(key) >= 0) {
+                return node;
             }
-            return subNode;
+
+            var nodePathLink = pathLink.branch(node);
+            var state = createState(node, nodePathLink, true);
+            var newState = mapper(state, key);
+
+            if (newState && !state.same(newState)) {
+                var newNode = valueOf(newState);
+                newState._mountPathLinkAt(pathLink, newNode, node);
+                return newNode;
+            } else {
+                return node;
+            }
         });
     });
 }
 
 function forEachNode(root, pathLink, paths, sideEffect) {
     var node = getNodeByPath(root, paths);
-    if (isUnreachableNode(node) || !isObject(node) || !isFunction(sideEffect)) {
+    if (isUnreachableNode(node) || isPrimitive(node) || !isFunction(sideEffect)) {
         return;
     }
 
     forEach(node, (value, key) => {
-        var nodePathLink = pathLink.clone().root(value);
+        if (excludePaths.indexOf(key) >= 0) {
+            return;
+        }
+
+        var nodePathLink = pathLink.branch(value);
         var state = createState(value, nodePathLink, true);
 
         return sideEffect(state, key);
     });
 }
 
+const IS_IMMUTABLE_STATE_SENTINEL = '__[IS_IMMUTABLE_STATE]__';
 export default function createState(initialState, pathLink = null, inited = false) {
     const _pathLink = pathLink || new PathLink();
     var _root = inited ? valueOf(initialState) : initNode(initialState, _pathLink);
     _pathLink.root(_root);
 
     var doChange = (state, changer) => {
-        var pathLink = _pathLink.clone();
+        var pathLink = _pathLink.branch();
         var node = changer(_root, pathLink);
 
         if (node === _root) {
@@ -163,14 +180,16 @@ export default function createState(initialState, pathLink = null, inited = fals
         }
     };
 
+    var privateMethods = {
+        [IS_IMMUTABLE_STATE_SENTINEL]: true,
+        _mountPathLinkAt: function (targetPathLink, rootNode, mountNode) {
+            targetPathLink.mount(_pathLink, rootNode, mountNode);
+        }
+    };
     var commonMethods = {
         constructor: function ImmutableState() {
             // No codes in here, it just need a name.
         },
-        toString: function () {
-            return JSON.stringify(this.toJSON());
-        },
-        _pathLink: _pathLink, // TODO 定义接口以复制path信息
         valueOf: function () {
             return _root;
         },
@@ -194,39 +213,45 @@ export default function createState(initialState, pathLink = null, inited = fals
                 return isEqualNode(valueOf(this), valueOf(other));
             }
         },
-        /** Represent the same object or not: GUID comparison */
-        is: function (other) {
-            if (this === other) {
-                return this;
-            } else {
-                var thisVal = valueOf(this);
-                var otherVal = valueOf(other);
-                return thisVal === otherVal
-                       || (isObject(thisVal) && isObject(otherVal)
-                           && guid(thisVal) === guid(otherVal));
-            }
+        /** Represent the same object or not: reference comparison */
+        same: function (other) {
+            return this === other || valueOf(this) === valueOf(other);
         },
         path: function (idOrNode) {
             return nodePath(_root, _pathLink, idOrNode);
         },
         keys: function () {
-            return Object.keys(_root);
+            var excludeKeys = [GUID_SENTINEL, OBJECT_CLASS_SENTINEL];
+            return Object.keys(_root).filter((key) => excludeKeys.indexOf(key) < 0);
         },
         has: function (pathOrIdOrNode) {
-            if (isString(pathOrIdOrNode)) {
+            if (isPrimitive(_root)) {
+                return false;
+            } else if (isPrimitive(pathOrIdOrNode)) {
                 if (pathOrIdOrNode in _root) {
                     return true;
-                } else if (_pathLink.exist(pathOrIdOrNode)) {
-                    pathOrIdOrNode = _pathLink.path(pathOrIdOrNode);
+                } else if (!_pathLink.get(pathOrIdOrNode)) {
+                    return !!_pathLink.path(pathOrIdOrNode);
                 } else {
-                    pathOrIdOrNode = null;
+                    return false;
                 }
-            } else if (isObject(pathOrIdOrNode) && !isArray(pathOrIdOrNode)) {
-                pathOrIdOrNode = _pathLink.path(pathOrIdOrNode);
+            } else if (isArray(pathOrIdOrNode)) {
+                var paths = pathOrIdOrNode;
+                var node = _root;
+                for (var i = 0; i < paths.length && !isPrimitive(node); i++) {
+                    var path = paths[i];
+                    if (!(path in node)) {
+                        return false;
+                    }
+                    node = node[path];
+                }
+                return i === paths.length;
+            } else {
+                return !!_pathLink.path(pathOrIdOrNode);
             }
-
-            var node = getNodeByPath(_root, pathOrIdOrNode);
-            return !isUnreachableNode(node);
+        },
+        val: function (path) {
+            return this.get(path).valueOf();
         },
         /**
          * Example:
@@ -247,10 +272,10 @@ export default function createState(initialState, pathLink = null, inited = fals
 
             if (node === _root) {
                 return this;
-            } else if (!isObject(node)) {
+            } else if (isPrimitive(node)) {
                 return createState(node);
             } else {
-                return createState(node, _pathLink.clone().root(node), true);
+                return createState(node, _pathLink.branch(node), true);
             }
         },
         /** Overwrite the existing */
@@ -316,9 +341,17 @@ export default function createState(initialState, pathLink = null, inited = fals
          * Do map with root node or the specified node.
          *
          * @param {String/String[]} [path]
-         * @param {Function} mapper Signature: `(state, path) => state`.
+         * @param {Function} mapper `(state, path) => state`.
          */
         map: function (path, mapper) {
+            if (isFunction(path)) {
+                mapper = path;
+                path = [];
+            }
+            if (!mapper) {
+                return this;
+            }
+
             var paths = extractPath(this, path);
             if (isNullOrUndefined(paths)) {
                 return this;
@@ -330,53 +363,106 @@ export default function createState(initialState, pathLink = null, inited = fals
         },
         /**
          * @param {String/String[]} [path]
-         * @param {Function} sideEffect Signature: `(state, path) => {}`.
+         * @param {Function} sideEffect `(state, path) => Boolean`.
          */
         forEach: function (path, sideEffect) {
-            var paths = extractPath(this, path);
+            if (isFunction(path)) {
+                sideEffect = path;
+                path = [];
+            }
+            if (!sideEffect) {
+                return this;
+            }
 
-            forEachNode(_root, paths, sideEffect);
+            var paths = extractPath(this, path);
+            forEachNode(_root, _pathLink, paths, sideEffect);
 
             return this;
+        },
+        /**
+         * @param {Function} predicate `(state, path, searchState) => Boolean`
+         */
+        find: function (predicate) {
+            if (!isFunction(predicate) || isPrimitive(_root)) {
+                return this;
+            }
+
+            var expectedNode = null;
+            this.forEach((state, path) => {
+                var accept = predicate(state, path, this);
+
+                if (accept) {
+                    expectedNode = valueOf(state);
+                    return false;
+                }
+            });
+
+            if (isPrimitive(expectedNode)) {
+                return createState(expectedNode);
+            } else {
+                return createState(expectedNode, _pathLink.branch(expectedNode), true);
+            }
+        },
+        /**
+         * @param {Function} predicate `(state, path, searchState) => Boolean`
+         */
+        filter: function (predicate) {
+            if (!isFunction(predicate) || isPrimitive(_root)) {
+                return this;
+            }
+
+            var nodes = isArray(_root) ? [] : {};
+            var pathLink = _pathLink.branch(nodes);
+            this.forEach((state, path) => {
+                var accept = predicate(state, path, this);
+                if (!accept) {
+                    return;
+                }
+
+                var prop = isArray(nodes) ? nodes.length : path;
+                nodes[prop] = valueOf(state);
+                pathLink.add(nodes[prop], nodes, prop);
+            });
+
+            return createState(nodes, pathLink, true);
         }
     };
 
-    var createArrayState = function (nodes) {
-        var pathLink = _pathLink.clone().root(nodes);
-        if (!nodes) {
-            pathLink.clear();
-        } else {
-            forEach(nodes, (node, index) => {
-                pathLink.add(node, nodes, index);
-            });
-        }
-        return createState(nodes, pathLink, true);
-    };
     var arrayMethods = {
         push: function (...values) {
-            var nodes = cloneNode(_root);
-            var pathLink = _pathLink.clone().root(nodes);
+            if (values.length === 0) {
+                return this;
+            }
 
-            values = values.map((value) => {
-                return initNode(value, pathLink);
-            });
-            Array.prototype.push.apply(nodes, values);
-            forEach(nodes, (node, index) => {
-                pathLink.add(node, nodes, index);
+            var nodes = cloneNode(_root);
+            var pathLink = _pathLink.branch(nodes);
+
+            values.forEach((value, index) => {
+                var node = initNode(value, pathLink, nodes, nodes.length + index);
+                nodes.push(node);
             });
 
             return createState(nodes, pathLink, true);
         },
         pop: function () {
-            var nodes = cloneNode(_root);
-            // TODO 删除被移除的节点path
-            nodes.pop();
+            if (_root.length === 0) {
+                return this;
+            }
 
-            return createArrayState(nodes);
+            var nodes = cloneNode(_root);
+            var pathLink = _pathLink.branch(nodes);
+            var node = nodes.pop();
+            pathLink.remove(node);
+
+            return createState(nodes, pathLink, true);
         },
         unshift: function (...values) {
+            if (values.length === 0) {
+                return this;
+            }
+
             var nodes = cloneNode(_root);
-            var pathLink = _pathLink.clone().root(nodes);
+            var pathLink = _pathLink.branch(nodes);
 
             values = values.map((value) => {
                 return initNode(value, pathLink);
@@ -389,25 +475,56 @@ export default function createState(initialState, pathLink = null, inited = fals
             return createState(nodes, pathLink, true);
         },
         shift: function () {
-            var nodes = cloneNode(_root);
-            // TODO 删除被移除的节点path
-            nodes.shift();
+            if (_root.length === 0) {
+                return this;
+            }
 
-            return createArrayState(nodes);
+            var nodes = cloneNode(_root);
+            var pathLink = _pathLink.branch(nodes);
+            var node = nodes.shift();
+            pathLink.remove(node);
+
+            return createState(nodes, pathLink, true);
         },
         splice: function (index, removeNum, ...values) {
-            var nodes = cloneNode(_root);
-            // TODO 删除被移除的节点path，初始化新增节点
-            Array.prototype.splice.apply(nodes, [index, removeNum].concat(values));
+            if (removeNum === 0 && values.length === 0) {
+                return this;
+            }
 
-            return createArrayState(nodes);
+            var nodes = cloneNode(_root);
+            var pathLink = _pathLink.branch(nodes);
+            values = values.map((value, i) => {
+                return initNode(value, pathLink, nodes, index + i);
+            });
+
+            var removed = Array.prototype
+                               .splice
+                               .apply(nodes, [index, removeNum].concat(values));
+            removed.forEach((node) => {
+                pathLink.remove(node);
+            });
+
+            for (var i = index + values.length; i < nodes.length; i++) {
+                pathLink.add(nodes[i], nodes, i);
+            }
+
+            return createState(nodes, pathLink, true);
         },
         slice: function (start, end) {
-            var nodes = cloneNode(_root);
-            // TODO 删除被移除的节点path
-            nodes.slice(start, end);
+            if ((start === 0 && end === _root.length)
+                || _root.length === 0) {
+                return this;
+            }
 
-            return createArrayState(nodes);
+            // Slice doesn't change the original array,
+            // so a new root should be created.
+            var nodes = _root.slice(start, end);
+            var pathLink = _pathLink.branch(nodes);
+            nodes.forEach((node, index) => {
+                pathLink.add(node, nodes, index - start);
+            });
+
+            return createState(nodes, pathLink, true);
         },
         first: function () {
             return this.at(0);
@@ -415,24 +532,9 @@ export default function createState(initialState, pathLink = null, inited = fals
         last: function () {
             return this.at(_root.length - 1);
         },
-        filter: function (filter) {
-            if (!isFunction(filter)) {
-                return this;
-            } else {
-                var nodes = [];
-                // TODO 删除被移除的节点path
-                this.forEach([], (state, index) => {
-                    var accept = filter(state, index, this);
-                    if (accept !== false) {
-                        nodes.push(valueOf(state));
-                    }
-                });
-                return createArrayState(nodes);
-            }
-        },
         at: function (index) {
             var node = index < _root.length && index >= 0 ? _root[index] : undefined;
-            return createState(node, _pathLink.clone().root(node), true);
+            return createState(node, _pathLink.branch(node), true);
         },
         clear: function () {
             return createState([]);
@@ -457,7 +559,7 @@ export default function createState(initialState, pathLink = null, inited = fals
         }
     };
 
-    var methods = {...commonMethods};
+    var methods = {...privateMethods, ...commonMethods};
     if (isArray(_root)) {
         methods = Object.assign(methods, objectMethods, arrayMethods);
     } else if (!isPrimitive(_root)) {
