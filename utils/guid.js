@@ -3,7 +3,7 @@ import isPrimitive from './isPrimitive';
 const seed = Math.random() * 1000000000000000 - Date.now();
 var gid = Math.floor(seed);
 function next() {
-    return (gid++).toString(16).replace('.', '');
+    return ('' + gid++)/*.toString(16).replace('.', '')*/;
 }
 
 export const GUID_SENTINEL = '__[GLOBAL_UNIQUE_ID]__';
@@ -31,9 +31,10 @@ export default function guid(obj, id) {
         return obj;
     }
 
-    if (!obj[GUID_SENTINEL] || id) {
+    var value = obj.valueOf();
+    if (!obj[GUID_SENTINEL] || !value[GUID_SENTINEL] || id) {
         bind(obj, id || next());
     }
 
-    return obj[GUID_SENTINEL];
+    return obj[GUID_SENTINEL] || value[GUID_SENTINEL];
 }

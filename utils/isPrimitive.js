@@ -1,4 +1,6 @@
 export default function isPrimitive(obj) {
     return !(obj instanceof Object)
-           || [Boolean, Number, String].indexOf(Object.getPrototypeOf(obj)) >= 0;
+           || obj instanceof Boolean || typeof obj === 'boolean'
+           || obj instanceof Number || typeof obj === 'number'
+           || obj instanceof String || typeof obj === 'string';
 }
