@@ -1,8 +1,4 @@
-import isFunction from 'lodash/isFunction';
 import isArray from 'lodash/isArray';
-import isObject from 'lodash/isObject';
-import isPlainObject from 'lodash/isPlainObject';
-import isEqualWith from 'lodash/isEqualWith';
 import uniq from 'lodash/uniq';
 
 import extend, {getBaseClass} from 'lib.utils.extend';
@@ -13,36 +9,133 @@ import {
 import forEach from '../utils/forEach';
 import instance from '../utils/instance';
 import isWritable from '../utils/isWritable';
+import map from '../utils/map';
+import traverse from '../object/traverse';
 
 import {
     mutateState
 } from '../modelizar/actions';
-import {
-    isPrimitive,
-    isPrimitiveClass
-} from '../utils/lang';
 
 const PROXY_CLASS_SUFFIX = '$$ModelizarProxy';
 const IS_PROXIED_CLASS_SENTINEL = '__IS_PROXIED_CLASS__';
+const primitiveClasses = [Boolean, Number, String, Date, Function, RegExp];
 const proxyClassMap = new Map();
+
+function isPrimitive(obj) {
+    return !(obj instanceof Object) || isPrimitiveClass(obj.constructor);
+}
+
+function isPrimitiveClass(cls) {
+    return cls && primitiveClasses.indexOf(cls) >= 0;
+}
 
 function isProxied(obj) {
     return obj && isProxiedClass(obj.constructor);
 }
 
 function isProxiedClass(cls) {
-    return isFunction(cls) && cls[IS_PROXIED_CLASS_SENTINEL];
+    return cls instanceof Function && cls[IS_PROXIED_CLASS_SENTINEL];
 }
 
-function deepEqual(obj, other) {
-    return isEqualWith(obj, other, (objVal, otherVal) => {
-        // Stop comparison when any one is proxied,
-        // because proxied's mutation should be dispatched by itself.
-        if (isProxied(objVal) || isProxied(otherVal)) {
-            return objVal === otherVal;
+function deepClone(obj) {
+    var refs = new Map();
+    traverse(obj, (obj, top, prop) => {
+        var clonedTop = refs.get(top);
+
+        if (isPrimitive(obj) || isProxied(obj)) {
+            clonedTop && (clonedTop[prop] = obj);
+            return false;
+        } else {
+            var clonedObj = isArray(obj) ? new Array(obj.length) : new obj.constructor();
+            refs.set(obj, clonedObj);
+
+            clonedTop && (clonedTop[prop] = clonedObj);
         }
-        // NOTE: Return undefined will continue to compare by `===` deeply.
     });
+
+    return refs.has(obj) ? refs.get(obj) : obj;
+}
+
+/**
+ * Patch structure:
+ * - https://github.com/benjamine/jsondiffpatch/blob/master/docs/deltas.md
+ * ```
+ * // For Object
+ * delta = {
+ *   property1: [ newValue1 ], // obj[property1] = newValue1
+ *   property2: [ oldValue2, newValue2 ] // obj[property2] = newValue2 (and previous value was oldValue2)
+ *   property5: [ oldValue5, 0, 0 ] // delete obj[property5] (and previous value was oldValue5)
+ * }
+ * // For Array
+ * delta = {
+ *   _t: 'a', // indicates this applies to an array
+ *   '1': [{'name': 'Cordoba'}], // inserted at index 1
+ *   '_3': [{'name': 'La Plata'}, 0, 0], // removed '{'name': 'La Plata'}' from index 3
+ *   '_4': ['obj', 2, 3] // move 'obj' from index 4 to index 2
+ * }
+ * ```
+ */
+function diffObj(leftObj, rightObj) {
+    var diff = {};
+    var refs = new Map([[rightObj, [leftObj, diff]]]);
+
+    traverse(rightObj, (right, rightTop, prop) => {
+        var left;
+        var leftTop;
+        var delta;
+        if (rightTop === undefined) {
+            left = refs.get(right)[0];
+            delta = refs.get(right)[1];
+        } else {
+            leftTop = refs.get(rightTop)[0];
+            delta = refs.get(rightTop)[1];
+            left = leftTop[prop];
+        }
+
+        if (right === left) {
+            return false;
+        }
+        if (isPrimitive(right)
+            || isPrimitive(left)
+            || right.constructor !== left.constructor
+            // `right` and `left` are all proxied, and `right` isn't `rightObj`
+            || (isProxied(right) && rightTop !== undefined)) {
+
+            if (isArray(rightTop) && isArray(leftTop)) {
+                var existingIndex = leftTop.indexOf(right);
+                // Move `right` from `existingIndex` to `prop`
+                if (existingIndex >= 0) {
+                    delta['_' + existingIndex] = [right, parseInt(prop, 10), 3];
+                } else {
+                    // A new element
+                    delta[prop] = [right];
+                }
+            } else {
+                // Change or add a property
+                delta[prop] = left === undefined ? [right] : [left, right];
+            }
+            return false;
+        }
+
+        if (rightTop !== undefined) {
+            delta = delta[prop] = isArray(right) ? {'_t': 'a'} : {};
+        }
+        // Removing checking
+        forEach(left, (value, prop) => {
+            if (isArray(left)) {
+                var valueInRightIndex = right.indexOf(value);
+                if (valueInRightIndex < 0) {
+                    delta['_' + prop] = [value, 0, 0];
+                }
+            } else if (!(prop in right)) {
+                delta[prop] = [value, 0, 0];
+            }
+        });
+
+        refs.set(right, [left, delta]);
+    });
+
+    return diff;
 }
 
 const IS_GUARDED_SENTINEL = '__IS_GUARDED__';
@@ -55,9 +148,8 @@ function addMutationGuard(obj) {
         mutations: new obj.constructor() // Like a ghost
     };
 
-    // TODO 在Vue.js中以下方式可能会存在问题
     forEach(obj, (value, prop) => {
-        if (isFunction(value)) {
+        if (value instanceof Function) {
             return;
         }
 
@@ -65,9 +157,7 @@ function addMutationGuard(obj) {
 
         guard.descriptors[prop] = des;
         // TODO How to receive new value of the non-configurable but writable property?
-        // TODO 深度克隆Array和未被代理的Object。注意对循环引用的处理！！
-        // TODO 不允许其他Object引用本Object内的数据并作引用相等比较！！
-        guard.mutations[prop] = value;
+        guard.mutations[prop] = deepClone(value);
         if (!des.configurable || !des.writable) {
             return;
         }
@@ -127,20 +217,24 @@ function getMethodsUntilBase(cls) {
 
     while (proto && proto.constructor !== Object) {
         // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/getOwnPropertyNames
-        var names = Object.getOwnPropertyNames(proto).filter(name => isFunction(proto[name]));
+        var names = Object.getOwnPropertyNames(proto)
+                          .filter(name => proto[name] instanceof Function);
         Array.prototype.push.apply(methods, names);
 
         proto = Object.getPrototypeOf(proto);
     }
 
     return uniq(methods).filter(name => {
-        return ['constructor', 'override', 'superclass', 'supr', 'extend'].indexOf(name) < 0;
+        return ['constructor', 'override', 'superclass',
+                'supr', 'extend'
+               ].indexOf(name) < 0;
     });
 }
 
 function proxyClass(cls) {
     if (isPrimitiveClass(cls)
-        || [Object, Array].indexOf(cls) >= 0
+        || cls === Object
+        || cls === Array
         || isProxiedClass(cls)) {
         return cls;
     }
@@ -161,7 +255,7 @@ function createProxyClass(cls) {
     }
 
     var proxyClsName = classify(cls.name + PROXY_CLASS_SUFFIX);
-    // No-argument constructor
+    // Non-argument constructor
     var proxyCls = new Function(`return function ${proxyClsName}() {}`)();
 
     proxyCls = extend(proxyCls, cls);
@@ -174,7 +268,6 @@ function createProxyClass(cls) {
 }
 
 function proxyClassMethod(proxyCls, cls) {
-    // TODO 代理属性的setter接口，仅在开关开启时允许修改（即backup/recover时），其余情况抛异常
     getMethodsUntilBase(cls).forEach(methodName => {
         var callback = cls.prototype[methodName];
 
@@ -195,10 +288,11 @@ function proxyClassMethod(proxyCls, cls) {
                     mutations = removeMutationGuard(this, guard);
                 }
 
-                if (!deepEqual(this, mutations)) {
+                var diff = diffObj(this, mutations);
+                if (diff && Object.keys(diff).length > 0) {
                     var method = `${cls.name}#${methodName}`;
                     var store = this[STORE_SENTINEL];
-                    store.dispatch(mutateState(mutations, method));
+                    store.dispatch(mutateState(this, diff, method));
                 }
             }
             return ret;
@@ -216,61 +310,82 @@ function proxyClassStatic(proxyCls, cls) {
     });
 }
 
-function proxyMerge(store, target, source, deep, depth, seen) {
-    seen.set(source, target);
-
-    forEach(source, (value, prop) => {
-        if (isWritable(target, prop)) {
-            target[prop] = proxy(store, value, deep, depth, seen);
+function createObj(source, store) {
+    if (isArray(source)) {
+        return new Array(source.length);
+    } else if (source.constructor === Object) {
+        return {};
+    } else {
+        var ctor = source.constructor;
+        var proxyCls = proxyClass(ctor);
+        if (proxyCls === ctor) {
+            return source;
         }
-    });
-    return target;
-}
 
-function proxyArray(store, obj, deep, depth, seen) {
-    // NOTE: When proxy array elements,
-    // the `depth` should always be kept the same value
-    // until to proxy an object.
-    return obj.map(value => proxy(store, value, deep, depth, seen));
-}
+        var proxied = instance(proxyCls);
+        // NOTE: Binding store to instance, not class for global sharing proxied class.
+        store && bindStore(store, proxied);
 
-function proxyPlainObject(store, obj, deep, depth, seen) {
-    // NOTE: Plain object may contains other object instance.
-    return proxyMerge(store, {}, obj, deep, depth + 1, seen);
-}
-
-function proxyObject(store, obj, deep, depth, seen) {
-    var ctor = obj.constructor;
-    var proxyCls = proxyClass(ctor);
-    if (proxyCls === ctor) {
-        return obj;
-    }
-
-    var proxied = instance(proxyCls);
-    // NOTE: Binding store to instance, not class for global sharing proxied class.
-    bindStore(store, proxied);
-    // TODO Proxy the owned methods of `obj`? Maybe we should make sure the owned method invoking prototype's methods.
-    return proxyMerge(store, proxied, obj, deep, depth + 1, seen);
-}
-
-export default function proxy(store, obj, deep = true, depth = 0, seen = new Map()) {
-    if (!isObject(obj)
-        || isPrimitive(obj)
-        || isProxied(obj)
-        || (!deep && depth > 0)) {
-        return obj;
-    }
-
-    var proxied = seen.get(obj);
-    if (proxied) {
         return proxied;
     }
+}
 
-    if (isArray(obj)) {
-        return proxyArray(store, obj, deep, depth, seen);
-    } else if (isPlainObject(obj)) {
-        return proxyPlainObject(store, obj, deep, depth, seen);
-    } else {
-        return proxyObject(store, obj, deep, depth, seen);
+export default function proxy(store, source, deep = true) {
+    if (isPrimitive(source) || isProxied(source)) {
+        return source;
+    } else if (!deep && (isArray(source) || source.constructor === Object)) {
+        return map(source, (value) => {
+            return proxy(store, value, false);
+        });
     }
+
+    // NOTE: Recursion will cause heavy performance problem
+    // and 'Maximum call stack size' error.
+    var root;
+    // {[sourceObject]: proxiedObject}
+    var seen = new Map();
+    // [topDst, topDstProp, src]
+    var stack = [undefined, undefined, source];
+    var src;
+    var dst; // Target object for receiving source properties.
+    var topDst; // Top object of target object.
+    var topDstProp; // Property of top object.
+    while (stack.length > 0) {
+        src = stack.pop();
+        topDstProp = stack.pop();
+        topDst = stack.pop();
+
+        var isSrcProxied = seen.has(src);
+        if (isSrcProxied) {
+            dst = seen.get(src);
+        } else {
+            dst = createObj(src, store);
+            seen.set(src, dst);
+        }
+
+        if (topDst === undefined) {
+            root = topDst = dst;
+        } else {
+            topDst[topDstProp] = dst;
+        }
+
+        if (isSrcProxied) {
+            continue;
+        }
+
+        Object.keys(src).forEach((key) => {
+            if (!isWritable(dst, key)) {
+                return;
+            }
+
+            var value = src[key];
+            if (isPrimitive(value) || !deep) {
+                dst[key] = value;
+            } else {
+                stack.push(dst, key, value);
+            }
+        });
+    }
+
+    return root;
 }

@@ -4,10 +4,11 @@ import {
 
 export const MODEL_STATE_MUTATE = REDUX_MODELIZAR_NAMESPACE + '/MODEL_STATE_MUTATE';
 
-export function mutateState(state, method) {
+export function mutateState(target, patch, method) {
     return {
         type: MODEL_STATE_MUTATE,
         method,
-        $state: state
+        $target: target,
+        $patch: patch
     };
 }

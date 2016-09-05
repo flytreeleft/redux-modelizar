@@ -1,6 +1,6 @@
 import clone from 'lodash/clone';
 
-import guid, {GUID_SENTINEL} from '../utils/guid';
+import guid from '../utils/guid';
 
 function deepEqualState(oldState, newState) {
     // NOTE: The reference will be changed
@@ -28,11 +28,11 @@ function shallowEqualState(oldState, newState) {
         if (oldS.isArray() && newS.isArray()
             && oldS.size() === newS.size()) {
             oldS.forEach((s, path) => {
-                equal = s.is(newS.get(path));
+                equal = s.same(newS.get(path));
                 return equal;
             });
         } else {
-            equal = oldS.is(newS);
+            equal = oldS.same(newS);
         }
         return equal;
     });
@@ -69,7 +69,7 @@ function shallowMerge(oldState, newState, deep = true) {
         return deep ? newState.map((state, path) => {
             var old = oldState.get(path);
 
-            if (old.is(state)) {
+            if (old.same(state)) {
                 return old;
             } else {
                 return shallowMerge(old, state, false);
@@ -100,7 +100,7 @@ function undoableState(state, options) {
     var value = state.valueOf();
     var newValue = clone(value);
     newValue.valueOf = function () {
-        var target = state.get(GUID_SENTINEL).valueOf();
+        var target = guid(state);
         var present = histories[target].present;
         return present === newState ? value : present.valueOf();
     };
@@ -154,7 +154,7 @@ export function init(state, action, options = {}) {
  * @param {Object} state The state of model.
  */
 export function insert(state, action) {
-    var target = state.get(GUID_SENTINEL).valueOf();
+    var target = guid(state);
     if (!target || !histories[target]) {
         return state;
     }
