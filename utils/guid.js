@@ -32,7 +32,7 @@ export default function guid(obj, id) {
     }
 
     var value = obj.valueOf();
-    if (!obj[GUID_SENTINEL] || !value[GUID_SENTINEL] || id) {
+    if ((!obj[GUID_SENTINEL] && !value[GUID_SENTINEL]) || id) {
         bind(obj, id || next());
     }
 

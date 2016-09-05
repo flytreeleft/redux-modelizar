@@ -87,10 +87,6 @@ PathLink.prototype.has = function (nodeOrId) {
  *          If node doesn't exist, return `undefined`.
  */
 PathLink.prototype.path = function (start, end = this._root) {
-    if (isPrimitive(start) || isPrimitive(end)) {
-        return;
-    }
-
     var lnk = this.get(start);
     if (!lnk) {
         return;
