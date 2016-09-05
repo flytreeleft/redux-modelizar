@@ -9,7 +9,8 @@ import isPrimitive from '../utils/isPrimitive';
 import valueOf from '../utils/valueOf';
 import map from '../utils/map';
 import {
-    GUID_SENTINEL
+    GUID_SENTINEL,
+    default as guid
 } from '../utils/guid';
 import {
     OBJECT_CLASS_SENTINEL
@@ -206,16 +207,20 @@ export default function createState(initialState, pathLink = null, inited = fals
             return isArray(_root);
         },
         /** Value comparison, excludes GUID property. */
-        equals: function (other) {
-            if (this === other) {
+        equals: function (obj) {
+            if (this === obj) {
                 return true;
             } else {
-                return isEqualNode(valueOf(this), valueOf(other));
+                return isEqualNode(valueOf(this), valueOf(obj));
             }
         },
         /** Represent the same object or not: reference comparison */
         same: function (other) {
             return this === other || valueOf(this) === valueOf(other);
+        },
+        /** Is presenting the same object or not? */
+        is: function (obj) {
+            return this.same(obj) || guid(valueOf(this)) === guid(valueOf(obj));
         },
         path: function (idOrNode) {
             return nodePath(_root, _pathLink, idOrNode);
@@ -278,7 +283,7 @@ export default function createState(initialState, pathLink = null, inited = fals
                 return createState(node, _pathLink.branch(node), true);
             }
         },
-        /** Overwrite the existing */
+        /** Overwrite the existing or create a new one */
         set: function (path, value) {
             if (arguments.length === 1) {
                 value = path;
@@ -336,6 +341,16 @@ export default function createState(initialState, pathLink = null, inited = fals
         },
         mergeDeep: function (valueOrState) {
             return this.merge(valueOrState, true);
+        },
+        remove: function (pathOrIdOrNode) {
+            var paths = this.path(pathOrIdOrNode) || extractPath(this, pathOrIdOrNode);
+            if (isNullOrUndefined(paths)) {
+                return this;
+            }
+
+            return doChange(this, (root, pathLink) => {
+                return removeNode(root, pathLink, paths);
+            });
         },
         /**
          * Do map with root node or the specified node.
@@ -546,18 +561,7 @@ export default function createState(initialState, pathLink = null, inited = fals
             return this.size() === 0;
         }
     };
-    var objectMethods = {
-        remove: function (pathOrIdOrNode) {
-            var paths = this.path(pathOrIdOrNode) || extractPath(this, pathOrIdOrNode);
-            if (isNullOrUndefined(paths)) {
-                return this;
-            }
-
-            return doChange(this, (root, pathLink) => {
-                return removeNode(root, pathLink, paths);
-            });
-        }
-    };
+    var objectMethods = {};
 
     var methods = {...privateMethods, ...commonMethods};
     if (isArray(_root)) {
