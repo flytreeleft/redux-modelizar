@@ -5,6 +5,11 @@ import {
     OBJECT_CLASS_SENTINEL
 } from './sentinels';
 
+/**
+ * @param {*} source
+ * @param {Function} walker `(obj, top, path) => true`
+ * @return {*} Return `source`.
+ */
 export default function traverse(source, walker) {
     if (!(walker instanceof Function)) {
         return source;
@@ -12,20 +17,23 @@ export default function traverse(source, walker) {
 
     // NOTE: Recursion will cause heavy performance problem
     // and 'Maximum call stack size' error.
-    // {[sourceObject]: guid(sourceObjectCopy)}
+    // {[sourceObject]: true}
     var refs = new Map();
-    // [topDst, topDstProp, src]
-    var stack = [undefined, undefined, source];
+    // [[top, topProp, paths, srcIndex, src]]
+    var stack = [undefined, undefined, [], -1, source];
     var src;
-    var dst; // Target object for receiving source properties.
+    var srcIndex;
+    var paths;
     var top; // Top object of target object.
     var topProp; // Property of top object.
     while (stack.length > 0) {
         src = valueOf(stack.pop());
+        srcIndex = stack.pop();
+        paths = stack.pop();
         topProp = stack.pop();
         top = stack.pop();
         if (isPrimitive(src)) {
-            walker(src, top, topProp);
+            walker(src, top, topProp, srcIndex, [...paths]);
             continue;
         }
 
@@ -36,11 +44,14 @@ export default function traverse(source, walker) {
         } else {
             refs.set(src, true);
         }
-        walker(src, top, topProp);
 
-        Object.keys(src).forEach((key) => {
+        if (walker(src, top, topProp, srcIndex, [...paths]) === false) {
+            continue;
+        }
+
+        Object.keys(src).forEach((key, index) => {
             var value = src[key];
-            stack.push(dst, key, value);
+            stack.push(src, key, [...paths, key], index, value);
         });
     }
 

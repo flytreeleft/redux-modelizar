@@ -28,7 +28,7 @@ export default function syncReal(target, source, processor, refs = new Map()/*{[
     // NOTE: Recursion will cause heavy performance problem
     // and 'Maximum call stack size' error.
     var root;
-    // [roTop, roTopProp, src]
+    // [[roTop, roTopProp, src]]
     var stack = [target, undefined, source];
     var src;
     var srcId;

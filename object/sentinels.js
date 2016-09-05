@@ -96,7 +96,7 @@ export function parseRegExp(obj) {
 
 export function createClassObj(obj) {
     var clsName;
-    if (Object.getPrototypeOf(obj).constructor === Object) {
+    if (obj.constructor === Object || obj.constructor === undefined) {
         clsName = obj[OBJECT_CLASS_SENTINEL];
     }
     if (!clsName) {

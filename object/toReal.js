@@ -17,15 +17,32 @@ import {
     parseRegExp
 } from './sentinels';
 
-export default function toReal(source, processor, refs = new Map()/*{[guid(sourceObject)]: realObject}*/) {
+function createRealObj(source) {
+    var ctor = parseObjClass(source);
+    if (!ctor) {
+        throw new Error(`No registered Class found for ${source}.`
+                        + 'Please make sure this object is converted by #toPlain(obj).');
+    }
+
+    return instance(ctor);
+}
+
+const emptyProcessor = (obj) => obj;
+export default function toReal(source,
+                               processor = emptyProcessor,
+                               refs = new Map()/*{[guid(sourceObject)]: realObject}*/) {
     if (isPrimitive(source)) {
         return valueOf(source);
     }
+    processor = {
+        pre: processor instanceof Function ? processor : processor.pre || emptyProcessor,
+        post: processor && processor.post || emptyProcessor
+    };
 
     // NOTE: Recursion will cause heavy performance problem
     // and 'Maximum call stack size' error.
     var root;
-    // [roTopRefObjCount, roTop, roTopProp, src]
+    // [[roTopRefObjCount, roTop, roTopProp, src]]
     var stack = [-1, undefined, undefined, source];
     var src;
     var srcId;
@@ -33,7 +50,6 @@ export default function toReal(source, processor, refs = new Map()/*{[guid(sourc
     var roTop; // Top object of real object.
     var roTopProp; // Property of top object.
     var roTopRefObjCount; // How may objects are referred by top object?
-    var ctor;
     var excludeKeys = [OBJECT_CLASS_SENTINEL];
     while (stack.length > 0) {
         src = valueOf(stack.pop());
@@ -46,17 +62,43 @@ export default function toReal(source, processor, refs = new Map()/*{[guid(sourc
         if (existedRef) {
             ro = refs.get(srcId);
         } else {
-            ctor = parseObjClass(src);
-            if (!ctor) {
-                throw new Error(`No registered Class found for ${src}.`
-                                + 'Please make sure this object is converted by #toPlain(obj).');
-            }
-
-            ro = instance(ctor);
+            ro = createRealObj(src);
             refs.set(guid(ro, srcId), ro);
             // Pre-processor
-            if (processor && (processor.pre || processor) instanceof Function) {
-                ro = (processor.pre || processor)(ro, roTop, roTopProp);
+            ro = processor.pre(ro, roTop, roTopProp);
+        }
+
+        // Pre-processor may return a primitive value.
+        if (!existedRef && !isPrimitive(ro)) {
+            var refObjCount = 0;
+            Object.keys(src).forEach((key) => {
+                if (excludeKeys.indexOf(key) >= 0 || !isWritable(ro, key)) {
+                    return;
+                }
+
+                var value = valueOf(src[key]);
+                if (isPrimitive(value)) {
+                    ro[key] = value;
+                }
+                else if (isRefObj(value)) {
+                    ro[key] = refs.get(parseRefKey(value));
+                }
+                else if (isFunctionObj(value)) {
+                    ro[key] = parseFunction(value);
+                }
+                else if (isDateObj(value)) {
+                    ro[key] = parseDate(value);
+                }
+                else if (isRegExpObj(value)) {
+                    ro[key] = parseRegExp(value);
+                }
+                else {
+                    stack.push(refObjCount++, ro, key, value);
+                }
+            });
+            // Post-processor for leaf node
+            if (refObjCount === 0) {
+                ro = processor.post(ro);
             }
         }
 
@@ -66,40 +108,9 @@ export default function toReal(source, processor, refs = new Map()/*{[guid(sourc
             roTop[roTopProp] = ro;
         }
         // Post-processor
-        if (roTopRefObjCount === 0 && processor && processor.post instanceof Function) {
+        if (roTopRefObjCount === 0) {
             roTop = processor.post(roTop);
         }
-        // Pre-processor may return a primitive value.
-        if (existedRef || isPrimitive(ro)) {
-            continue;
-        }
-
-        var refObjCount = 0;
-        Object.keys(src).forEach((key) => {
-            if (excludeKeys.indexOf(key) >= 0 || !isWritable(ro, key)) {
-                return;
-            }
-
-            var value = valueOf(src[key]);
-            if (isPrimitive(value)) {
-                ro[key] = value;
-            }
-            else if (isRefObj(value)) {
-                ro[key] = refs.get(parseRefKey(value));
-            }
-            else if (isFunctionObj(value)) {
-                ro[key] = parseFunction(value);
-            }
-            else if (isDateObj(value)) {
-                ro[key] = parseDate(value);
-            }
-            else if (isRegExpObj(value)) {
-                ro[key] = parseRegExp(value);
-            }
-            else {
-                stack.push(refObjCount++, ro, key, value);
-            }
-        });
     }
 
     return root;
