@@ -357,6 +357,8 @@ export default function createState(initialState, pathLink = null, inited = fals
          *
          * @param {String/String[]} [path]
          * @param {Function} mapper `(state, path) => state`.
+         *          If return null or undefined,
+         *          the original will not be changed.
          */
         map: function (path, mapper) {
             if (isFunction(path)) {

@@ -25,7 +25,6 @@ export function getFunctionByName(fnName) {
     return fn;
 }
 
-// TODO 可注册模型class名称，建立name和function的映射关系，且可在运行中动态注册。从而确保在任何时候均可准确还原到任意点的状态
 export function registerFunction(name, fn) {
     if (name && fn instanceof Function) {
         fnMap[name] = fn;

@@ -23,17 +23,8 @@ export {
 } from './undoable';
 
 export {
-    is
-} from './utils/lang';
-export {
-    hashCode
-} from './utils/hashCode';
-export {
     isEqualNode
 } from './state/node';
-export {
-    parseObjClass
-} from './object/sentinels';
 export {
     registerFunction
 } from './object/functions';
@@ -46,3 +37,9 @@ export {
 export {
     default as syncReal
 } from './object/syncReal';
+export {
+    default as proxy
+} from './object/proxy';
+export {
+    default as guid
+} from './utils/guid';

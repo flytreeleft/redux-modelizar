@@ -8,7 +8,7 @@ import proxy from './object/proxy';
 import syncReal from './object/syncReal';
 import bindHistory from './undoable/bindHistory';
 
-export default function (store, obj, mapping) {
+export default function (store, obj, mapping = {}) {
     var currentState;
     var bind = () => {
         var previousState = currentState;
