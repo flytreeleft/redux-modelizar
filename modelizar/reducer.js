@@ -1,8 +1,11 @@
-import find from 'lodash/find';
 import isArray from 'lodash/isArray';
+import isObject from 'lodash/isObject';
 
 import traverse from '../object/traverse';
 import forEach from '../utils/forEach';
+import {
+    parseObjClass
+} from '../object/sentinels';
 
 import {
     MODEL_STATE_MUTATE
@@ -11,13 +14,11 @@ import undoable from '../undoable';
 
 // undoable init/undo/redo/batching/clear时会指定目标，通过目标找到path并调用undoable更新该目标的状态
 // undoable insert仅在有更新时发生，其仅需拦截更新path上的节点即可
-function undoableMutate(state, action = {}, histories = []) {
-    var history = find(histories, (history) => {
-        return history.filter(state, action);
-    });
+function undoableMutate(state, action = {}, filter = () => false) {
+    var opts = filter(state, action, parseObjClass(state.valueOf()));
 
-    if (history) {
-        return undoable((state, action) => state, history.options)(state, action);
+    if (opts) {
+        return undoable((state, action) => state, isObject(opts) ? opts : {})(state, action);
     } else {
         return state;
     }
@@ -99,7 +100,7 @@ function mutate(state, action) {
     return newState;
 }
 
-export function mutation(state, action = {}, histories = []) {
+export function mutation(state, action = {}, options = {}) {
     var target = action.$target;
     var path = state.path(target);
 
@@ -108,11 +109,11 @@ export function mutation(state, action = {}, histories = []) {
             return state.update(path, (state) => {
                 return mutate(state, action);
             }, (state) => {
-                return undoableMutate(state, action, histories);
+                return undoableMutate(state, action, options.undoable);
             });
         default:
             return state.update(path, (state) => {
-                return undoableMutate(state, action, histories);
+                return undoableMutate(state, action, options.undoable);
             });
     }
 }
