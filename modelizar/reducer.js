@@ -67,6 +67,8 @@ function mutate(state, action) {
                     }
                 });
                 // Removing or inserting elements from tail to head
+                // NOTE: Using `.remove` maybe faster than using `.filter`
+                // when the state contains huge number data.
                 toRemove.sort(compare.numerically).forEach((index) => {
                     newState = newState.remove([...paths, index]);
                 });
