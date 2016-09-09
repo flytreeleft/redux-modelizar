@@ -30,6 +30,7 @@ export default function bindHistory(store, obj) {
         configurable: false,
         writable: false,
         value: {
+            timestamp: () => getHistory(obj).timestamp,
             undo: total => store.dispatch(undo(obj, total)),
             redo: total => store.dispatch(redo(obj, total)),
             clear: () => store.dispatch(clear(obj)),

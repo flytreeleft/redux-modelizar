@@ -123,6 +123,7 @@ export function getHistory(target) {
     var history = histories[id];
 
     return history ? {
+        timestamp: history.timestamp,
         undoes: [].concat(history.past),
         redoes: [].concat(history.future),
         isBatching: history.isBatching
@@ -140,6 +141,7 @@ export function init(state, action, options = {}) {
 
     var present = undoableState(state, options);
     histories[target] = {
+        timestamp: Date.now(),
         future: [],
         present: present,
         past: [],
@@ -168,6 +170,7 @@ export function insert(state, action) {
     }
 
     var hist = {
+        timestamp: history.timestamp,
         future: [].concat(history.future),
         present: present,
         past: [].concat(history.past)
@@ -193,6 +196,7 @@ export function insert(state, action) {
     var newState = undoableState(state, options);
     history.present = present = newState;
     history.future = [];
+    history.timestamp = Date.now();
 
     return present;
 }
@@ -216,6 +220,7 @@ export function undo(state, action = {}) {
     history.present = present = undoes.shift();
     history.future = [...undoes, ...future];
     history.past = index > 0 ? past.slice(0, index) : [];
+    history.timestamp = Date.now();
 
     var merge = options.deep ? deepMerge : shallowMerge;
     return merge(state, present);
@@ -240,6 +245,7 @@ export function redo(state, action = {}) {
     history.present = present = redoes.pop();
     history.past = [...past, ...redoes];
     history.future = index < future.length ? future.slice(index) : [];
+    history.timestamp = Date.now();
 
     var merge = options.deep ? deepMerge : shallowMerge;
     return merge(state, present);
