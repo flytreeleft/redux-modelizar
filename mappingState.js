@@ -1,14 +1,10 @@
-import isArray from 'lodash/isArray';
-
 import forEach from './utils/forEach';
-import valueOf from './utils/valueOf';
-import isPlainObject from './utils/isPlainObject';
 
 import proxy from './object/proxy';
-import syncReal from './object/syncReal';
+import diffReal from './object/diffReal';
 import bindHistory from './undoable/bindHistory';
 
-export default function (store, obj, mapping = {}) {
+export default function (store, target, mapping = {}) {
     var currentState;
     var bind = () => {
         var previousState = currentState;
@@ -21,22 +17,16 @@ export default function (store, obj, mapping = {}) {
                 return;
             }
 
-            var tag = 'Mapping state - syncReal';
+            var tag = 'Mapping state - diffReal';
             console.time(tag);
             // console.profile(tag);
-            obj[prop] = syncReal(obj[prop], valueOf(current), {
+            target[prop] = diffReal(target[prop], current, previous, {
                 // NOTE: No need deep proxy or proxy plain Object/Array,
-                // `syncReal` will traverse all deeply.
-                pre: (real) => {
-                    if (real instanceof Object
-                        && !isArray(real)
-                        && !isPlainObject(real)) {
-                        return proxy(store, real, false);
-                    } else {
-                        return real;
-                    }
+                // `diffReal` will traverse all deeply.
+                pre: (obj) => {
+                    return proxy(store, obj, false);
                 },
-                post: (real) => bindHistory(store, real)
+                post: (obj) => bindHistory(store, obj)
             });
             // console.profileEnd();
             console.timeEnd(tag);

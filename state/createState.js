@@ -214,11 +214,11 @@ export default function createState(initialState, pathLink = null, inited = fals
                 return isEqualNode(valueOf(this), valueOf(obj));
             }
         },
-        /** Represent the same object or not: reference comparison */
+        /** Is the same object tree or not? Root reference comparision */
         same: function (other) {
             return this === other || valueOf(this) === valueOf(other);
         },
-        /** Is presenting the same object or not? */
+        /** Is presenting the same object or not? GUID of object tree comparison */
         is: function (obj) {
             return this.same(obj) || guid(valueOf(this)) === guid(valueOf(obj));
         },
