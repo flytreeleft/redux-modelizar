@@ -18,7 +18,10 @@ import {
 } from './sentinels';
 import toReal from './toReal';
 
-export default function syncReal(target, source, processor, refs = new Map()/*{[guid(sourceObject)]: realObject}*/) {
+export default function syncReal(target,
+                                 source,
+                                 processor,
+                                 refs = new Map()/*{[guid(sourceObject)]: realObject}*/) {
     if (isPrimitive(source)) {
         return valueOf(source);
     } else if (target === source) {

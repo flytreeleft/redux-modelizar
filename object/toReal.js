@@ -24,7 +24,10 @@ function createRealObj(source) {
                         + 'Please make sure this object is converted by #toPlain(obj).');
     }
 
-    return instance(ctor);
+    var ro = instance(ctor);
+    guid(ro, guid(source));
+
+    return ro;
 }
 
 const emptyProcessor = (obj) => obj;
@@ -34,9 +37,20 @@ export default function toReal(source,
     if (isPrimitive(source)) {
         return valueOf(source);
     }
+
+    var pre = processor instanceof Function ? processor : processor.pre || emptyProcessor;
+    var post = processor && processor.post || emptyProcessor;
     processor = {
-        pre: processor instanceof Function ? processor : processor.pre || emptyProcessor,
-        post: processor && processor.post || emptyProcessor
+        pre: (obj) => {
+            obj = pre(obj);
+            !isPrimitive(obj) && refs.set(guid(obj), obj);
+            return obj;
+        },
+        post: (obj) => {
+            obj = post(obj);
+            !isPrimitive(obj) && refs.set(guid(obj), obj);
+            return obj;
+        }
     };
 
     // NOTE: Recursion will cause heavy performance problem
@@ -63,7 +77,6 @@ export default function toReal(source,
             ro = refs.get(srcId);
         } else {
             ro = createRealObj(src);
-            refs.set(guid(ro, srcId), ro);
             // Pre-processor
             ro = processor.pre(ro, roTop, roTopProp);
         }

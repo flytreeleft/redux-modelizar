@@ -15,7 +15,10 @@ import {
 } from './sentinels';
 
 function createObj(source) {
-    return isArray(source) ? new Array(source.length) : createClassObj(source);
+    var obj = isArray(source) ? new Array(source.length) : createClassObj(source);
+    guid(obj, guid(source));
+
+    return obj;
 }
 
 const emptyProcessor = (obj) => obj;
@@ -63,10 +66,9 @@ export default function toPlain(source, processor = emptyProcessor) {
         }
 
         dst = createObj(src);
-        refs.set(src, guid(dst, srcId));
-
         // Pre-processor
         dst = processor.pre(dst, topDst, topDstProp);
+        refs.set(src, guid(dst));
         // Pre-processor may return a primitive value.
         if (!isRefObj(dst) && !isPrimitive(dst)) {
             var refObjCount = 0;
