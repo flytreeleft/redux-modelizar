@@ -26,7 +26,7 @@ import {
  * - [Redux undo](https://github.com/omnidan/redux-undo);
  */
 export default function undoable(reducer, options = {}) {
-    options = defaults(options, {
+    options = defaults({}, options, {
         // Only add to history if return `true`
         filter: (action, currentState, previousHistory) => true,
         debug: false,
@@ -62,9 +62,12 @@ export default function undoable(reducer, options = {}) {
             case UNDOABLE_END_BATCH:
                 return endBatch(state, action);
             default:
-                // For initializing lazy history.
-                var newState = init(state, action, options);
-                newState = reducer(state, action);
+                // 注意以下情况：
+                // - 状态变更（部分/全部）：传入的state和reducer返回的state
+                //   必然为完整的model state，故，action无需指定target；
+                // - 多级undoable：insert中会检查状态是否真的发生变化，
+                //   在下级发生变化且`deep==true`时，上级也需同样记录变化；
+                var newState = reducer(state, action);
                 return insert(newState, action);
         }
     };

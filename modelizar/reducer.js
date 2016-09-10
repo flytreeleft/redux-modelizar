@@ -11,14 +11,31 @@ import {
     MODEL_STATE_MUTATE
 } from './actions';
 import undoable from '../undoable';
+import {
+    getHistory
+} from '../undoable/reducer';
+import {
+    init
+} from '../undoable/actions';
 
-// undoable init/undo/redo/batching/clear时会指定目标，通过目标找到path并调用undoable更新该目标的状态
+const emptyReducer = (state, action) => state;
+// undoable undo/redo/batching/clear时会指定目标，通过目标找到path并调用undoable更新该目标的状态
 // undoable insert仅在有更新时发生，其仅需拦截更新path上的节点即可
-function undoableMutate(state, action = {}, filter = () => false) {
-    var opts = filter(state, action, parseObjClass(state.valueOf()));
+function undoableMutate(state, action = {}, filter = () => false, rootState) {
+    var target = state.valueOf();
+    var opts = filter(state, action, parseObjClass(target));
 
     if (opts) {
-        return undoable((state, action) => state, isObject(opts) ? opts : {})(state, action);
+        opts = isObject(opts) ? opts : {};
+        // NOTE: `state` already be mutated,
+        // so trigger initializing history
+        // by passing the original state in `rootState`.
+        if (!getHistory(target)) {
+            var path = rootState.path(target);
+            var oldState = rootState.get(path);
+            undoable(emptyReducer, opts)(oldState, init(target));
+        }
+        return undoable(emptyReducer, opts)(state, action);
     } else {
         return state;
     }
@@ -105,17 +122,18 @@ function mutate(state, action) {
 export function mutation(state, action = {}, options = {}) {
     var target = action.$target;
     var path = state.path(target);
+    var rootState = state;
 
     switch (action.type) {
         case MODEL_STATE_MUTATE:
             return state.update(path, (state) => {
                 return mutate(state, action);
             }, (state) => {
-                return undoableMutate(state, action, options.undoable);
+                return undoableMutate(state, action, options.undoable, rootState);
             });
         default:
             return state.update(path, (state) => {
-                return undoableMutate(state, action, options.undoable);
+                return undoableMutate(state, action, options.undoable, rootState);
             });
     }
 }

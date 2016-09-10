@@ -20,10 +20,18 @@ export default function bindHistory(store, obj) {
     }
 
     var getLazyHistory = (obj) => {
-        if (!getHistory(obj)) {
+        var history = getHistory(obj);
+
+        if (!history) {
             store.dispatch(init(obj));
+            history = getHistory(obj);
         }
-        return getHistory(obj);
+        return history ? history : {
+            timestamp: 0,
+            undoes: [],
+            redoes: [],
+            isBatching: false
+        };
     };
 
     Object.defineProperty(obj, 'history', {

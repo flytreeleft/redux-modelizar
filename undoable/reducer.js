@@ -51,8 +51,7 @@ function shallowEqualState(oldState, newState) {
  *   if the new one `is` the old one, return the old one;
  */
 function shallowMerge(oldState, newState, deep = true) {
-    if (oldState === newState || !oldState
-        || oldState.valueOf() === newState.valueOf()) {
+    if (!oldState || oldState.same(newState)) {
         return newState;
     }
 
@@ -92,7 +91,7 @@ function undoableState(state, options) {
     }
 
     var newState = state.set('valueOf', () => {
-        var target = guid(state);
+        var target = guid(state.valueOf());
         var present = histories[target].present;
         return present === newState ? state.valueOf() : present.valueOf();
     });
@@ -110,21 +109,21 @@ var histories = {};
  */
 export function getHistory(target) {
     var id = guid(target);
-    var history = histories[id] || {};
+    var history = histories[id];
 
-    return {
-        timestamp: history.timestamp || 0,
-        undoes: [].concat(history.past || []),
-        redoes: [].concat(history.future || []),
-        isBatching: history.isBatching || false
-    };
+    return history ? {
+        timestamp: history.timestamp,
+        undoes: [].concat(history.past),
+        redoes: [].concat(history.future),
+        isBatching: history.isBatching
+    } : null;
 }
 
 /**
  * @param {Object} state The state of model.
  */
 export function init(state, action, options = {}) {
-    var target = guid(action.$target);
+    var target = guid(state.valueOf());
     if (!target || histories[target]) {
         return state;
     }
@@ -146,7 +145,7 @@ export function init(state, action, options = {}) {
  * @param {Object} state The state of model.
  */
 export function insert(state, action) {
-    var target = guid(state);
+    var target = guid(state.valueOf());
     if (!target || !histories[target]) {
         return state;
     }

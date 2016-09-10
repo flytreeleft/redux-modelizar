@@ -178,6 +178,10 @@ export default function createState(initialState, pathLink = null, inited = fals
             return path;
         } else if (isString(path)) {
             return [path];
+        } else if (!isNullOrUndefined(path)) {
+            throw new Error('Expected parameter "path" is'
+                            + ' an Array or String. But received '
+                            + path);
         }
     };
 
