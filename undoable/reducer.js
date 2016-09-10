@@ -1,5 +1,3 @@
-import clone from 'lodash/clone';
-
 import guid from '../utils/guid';
 
 function deepEqualState(oldState, newState) {
@@ -85,10 +83,7 @@ function deepMerge(oldState, newState) {
         return newState;
     }
 
-    var value = newState.valueOf();
-    delete value.valueOf;
-
-    return newState.set(value);
+    return newState.remove('valueOf');
 }
 
 function undoableState(state, options) {
@@ -96,16 +91,11 @@ function undoableState(state, options) {
         return state;
     }
 
-    var newState;
-    var value = state.valueOf();
-    var newValue = clone(value);
-    newValue.valueOf = function () {
+    var newState = state.set('valueOf', () => {
         var target = guid(state);
         var present = histories[target].present;
-        return present === newState ? value : present.valueOf();
-    };
-
-    newState = state.set(newValue);
+        return present === newState ? state.valueOf() : present.valueOf();
+    });
     return newState;
 }
 
@@ -113,21 +103,21 @@ function undoableState(state, options) {
 // TODO Record `action.type`
 var histories = {};
 
-// 注意：不要直接修改传入对象！！！！
+// WARNING: Never change the parameter which is an Object!
 
 /**
  * Invoke this method at any time you need using `history`.
  */
 export function getHistory(target) {
     var id = guid(target);
-    var history = histories[id];
+    var history = histories[id] || {};
 
-    return history ? {
-        timestamp: history.timestamp,
-        undoes: [].concat(history.past),
-        redoes: [].concat(history.future),
-        isBatching: history.isBatching
-    } : null;
+    return {
+        timestamp: history.timestamp || 0,
+        undoes: [].concat(history.past || []),
+        redoes: [].concat(history.future || []),
+        isBatching: history.isBatching || false
+    };
 }
 
 /**

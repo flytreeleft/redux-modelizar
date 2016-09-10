@@ -19,26 +19,27 @@ export default function bindHistory(store, obj) {
         return obj;
     }
 
-    // TODO 在更新Store时注册model的history
-    store.dispatch(init(obj));
-    if (!getHistory(obj)) {
-        return obj;
-    }
+    var getLazyHistory = (obj) => {
+        if (!getHistory(obj)) {
+            store.dispatch(init(obj));
+        }
+        return getHistory(obj);
+    };
 
     Object.defineProperty(obj, 'history', {
         enumerable: false,
         configurable: false,
         writable: false,
         value: {
-            timestamp: () => getHistory(obj).timestamp,
+            timestamp: () => getLazyHistory(obj).timestamp,
             undo: total => store.dispatch(undo(obj, total)),
             redo: total => store.dispatch(redo(obj, total)),
             clear: () => store.dispatch(clear(obj)),
-            undoable: () => getHistory(obj).undoes.length > 0,
-            redoable: () => getHistory(obj).redoes.length > 0,
-            undoes: () => getHistory(obj).undoes,
-            redoes: () => getHistory(obj).redoes,
-            isBatching: () => getHistory(obj).isBatching,
+            undoable: () => getLazyHistory(obj).undoes.length > 0,
+            redoable: () => getLazyHistory(obj).redoes.length > 0,
+            undoes: () => getLazyHistory(obj).undoes,
+            redoes: () => getLazyHistory(obj).redoes,
+            isBatching: () => getLazyHistory(obj).isBatching,
             startBatch: () => store.dispatch(startBatch(obj)),
             endBatch: () => store.dispatch(endBatch(obj))
         }
