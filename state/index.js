@@ -1,3 +1,4 @@
 export {
-    default as createState
+    default as createState,
+    isState
 } from './createState';

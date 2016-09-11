@@ -12,6 +12,9 @@ export {
     default as mappingState
 } from './mappingState';
 export {
+    default as enableReduxDevTools
+} from './enableReduxDevTools';
+export {
     createState
 } from './state';
 

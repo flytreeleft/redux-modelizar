@@ -158,6 +158,10 @@ function forEachNode(root, pathLink, paths, sideEffect) {
 }
 
 const IS_IMMUTABLE_STATE_SENTINEL = '__[IS_IMMUTABLE_STATE]__';
+export function isState(obj) {
+    return obj && Object.getPrototypeOf(obj)[IS_IMMUTABLE_STATE_SENTINEL] === true;
+}
+
 export default function createState(initialState, pathLink = null, inited = false) {
     const _pathLink = pathLink || new PathLink();
     var _root = inited ? valueOf(initialState) : initNode(initialState, _pathLink);

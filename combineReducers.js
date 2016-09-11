@@ -1,30 +1,23 @@
 import {
-    ActionTypes
-} from 'redux/lib/createStore';
-
-import {
-    createState
+    createState,
+    isState
 } from './state';
 import map from './utils/map';
 
-// TODO 提供连接Redux Devtools的中间件。参考： https://github.com/arqex/freezer-redux-devtools
-
 export default function (reducers, options = {}) {
     return (state = {}, action) => {
-        switch (action.type) {
-            case ActionTypes.INIT:
-                var tag = 'Initial state: createState';
-                // console.time(tag);
-                // console.profile(tag);
-                state = createState(state);
-                // console.profileEnd();
-                // console.timeEnd(tag);
-                break;
+        if (!isState(state)) {
+            var tag = 'Initialize state';
+            console.time(tag);
+            // console.profile(tag);
+            state = createState(state);
+            // console.profileEnd();
+            console.timeEnd(tag);
         }
 
         map(reducers, (reducer, key) => {
             var tag = 'Reduce state: ' + key + ', ' + action.type;
-            // console.time(tag);
+            console.time(tag);
             // console.profile(tag);
             if (!state.has(key)) { // No initial value?
                 var stateForKey = reducer(undefined, action);
@@ -35,7 +28,7 @@ export default function (reducers, options = {}) {
                 });
             }
             // console.profileEnd();
-            // console.timeEnd(tag);
+            console.timeEnd(tag);
         });
         return state;
     };
