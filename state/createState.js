@@ -450,6 +450,9 @@ export default function createState(initialState, pathLink = null, inited = fals
     };
 
     var arrayMethods = {
+        /**
+         * NOTE: If need push some big arrays, using {@link #concat} instead.
+         */
         push: function (...values) {
             if (values.length === 0) {
                 return this;
@@ -507,25 +510,31 @@ export default function createState(initialState, pathLink = null, inited = fals
 
             return createState(nodes, pathLink, true);
         },
-        splice: function (index, removeNum, ...values) {
+        /**
+         * NOTE: If need insert a big array, using {@link #insert} instead.
+         */
+        splice: function (start, removeNum, ...values) {
             if (removeNum === 0 && values.length === 0) {
                 return this;
             }
 
             var nodes = cloneNode(_root);
             var pathLink = _pathLink.branch(nodes);
-            values = values.map((value, i) => {
-                return initNode(value, pathLink, nodes, index + i);
-            });
+            var i;
+            var removed;
+            var node;
 
-            var removed = Array.prototype
-                               .splice
-                               .apply(nodes, [index, removeNum].concat(values));
-            removed.forEach((node) => {
-                pathLink.remove(node);
-            });
-
-            for (var i = index + values.length; i < nodes.length; i++) {
+            for (i = 0; i < removeNum; i++) {
+                removed = nodes.splice(start, 1);
+                pathLink.remove(removed);
+            }
+            for (i = 0; i < values.length; i++) {
+                let index = start + i;
+                node = initNode(values[i], pathLink, nodes, index);
+                nodes.splice(index, 0, node);
+            }
+            // Update the rest elements.
+            for (i = start + values.length; i < nodes.length; i++) {
                 pathLink.add(nodes[i], nodes, i);
             }
 
@@ -544,6 +553,43 @@ export default function createState(initialState, pathLink = null, inited = fals
             nodes.forEach((node, index) => {
                 pathLink.add(node, nodes, index - start);
             });
+
+            return createState(nodes, pathLink, true);
+        },
+        concat: function (...arrays) {
+            if (arrays.length === 0) {
+                return this;
+            }
+
+            var nodes = cloneNode(_root);
+            var pathLink = _pathLink.branch(nodes);
+            var values = Array.prototype.concat.apply([], arrays);
+
+            values.forEach((value, index) => {
+                var node = initNode(value, pathLink, nodes, nodes.length + index);
+                nodes.push(node);
+            });
+
+            return createState(nodes, pathLink, true);
+        },
+        insert: function (index, values) {
+            if (values.length === 0) {
+                return this;
+            }
+
+            var nodes = cloneNode(_root);
+            var pathLink = _pathLink.branch(nodes);
+            var start = index;
+
+            values.forEach((value, index) => {
+                var i = start + index;
+                var node = initNode(value, pathLink, nodes, i);
+                nodes.splice(i, 0, node);
+            });
+            // Update the rest elements.
+            for (var i = start + values.length; i < nodes.length; i++) {
+                pathLink.add(nodes[i], nodes, i);
+            }
 
             return createState(nodes, pathLink, true);
         },
