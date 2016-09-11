@@ -59,7 +59,7 @@ function mutate(state, action) {
             return;
         }
 
-        var paths = [...refs.get(deltaTop), prop];
+        var paths = refs.get(deltaTop).concat([prop]);
         if (!isArray(delta)) {
             if (delta._t === 'a') {
                 var toRemove = [];
@@ -87,16 +87,16 @@ function mutate(state, action) {
                 // NOTE: Using `.remove` maybe faster than using `.filter`
                 // when the state contains huge number data.
                 toRemove.sort(compare.numerically).forEach((index) => {
-                    newState = newState.remove([...paths, index]);
+                    newState = newState.remove(paths.concat([index]));
                 });
                 toInsert.sort(compare.numericallyBy('index')).forEach((insertion) => {
                     var index = insertion.index;
-                    var elPaths = [...paths, index];
+                    var elPaths = paths.concat([index]);
                     if (insertion.source === undefined) { // insertion
                         newState = newState.set(elPaths, delta[index][0]);
                     } else { // moving
                         newState = newState.update(elPaths, () => {
-                            return state.get([...paths, insertion.source]);
+                            return state.get(paths.concat([insertion.source]));
                         });
                     }
                 });

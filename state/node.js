@@ -19,7 +19,7 @@ export function cloneNode(node) {
     }
 
     var nodeId = guid(node);
-    var newNode = isArray(node) ? [...node] : {...node};
+    var newNode = isArray(node) ? node.concat() : {...node};
     guid(newNode, nodeId);
 
     return newNode;
@@ -162,7 +162,7 @@ export function copyNodeByPath(root, pathLink, paths, targetNodeProcessor, pathN
     }
     // Process the target node.
     var processedNode = targetNodeProcessor
-        ? targetNodeProcessor(node, topNode, path, [...paths])
+        ? targetNodeProcessor(node, topNode, path, paths.slice())
         : undefined;
     if (processedNode !== undefined && processedNode !== node) {
         node = processedNode;

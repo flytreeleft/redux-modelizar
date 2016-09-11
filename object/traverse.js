@@ -33,7 +33,7 @@ export default function traverse(source, walker) {
         topProp = stack.pop();
         top = stack.pop();
         if (isPrimitive(src)) {
-            walker(src, top, topProp, srcIndex, [...paths]);
+            walker(src, top, topProp, srcIndex, paths.slice());
             continue;
         }
 
@@ -45,13 +45,13 @@ export default function traverse(source, walker) {
             refs.set(src, true);
         }
 
-        if (walker(src, top, topProp, srcIndex, [...paths]) === false) {
+        if (walker(src, top, topProp, srcIndex, paths.slice()) === false) {
             continue;
         }
 
         Object.keys(src).forEach((key, index) => {
             var value = src[key];
-            stack.push(src, key, [...paths, key], index, value);
+            stack.push(src, key, paths.concat([key]), index, value);
         });
     }
 

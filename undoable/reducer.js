@@ -113,8 +113,8 @@ export function getHistory(target) {
 
     return history ? {
         timestamp: history.timestamp,
-        undoes: [].concat(history.past),
-        redoes: [].concat(history.future),
+        undoes: history.past.slice(),
+        redoes: history.future.slice(),
         isBatching: history.isBatching
     } : null;
 }
@@ -160,9 +160,9 @@ export function insert(state, action) {
 
     var hist = {
         timestamp: history.timestamp,
-        future: [].concat(history.future),
+        future: history.future.slice(),
         present: present,
-        past: [].concat(history.past)
+        past: history.past.slice()
     };
     if (options.filter && !options.filter(action, state, hist)) {
         return state;
@@ -204,10 +204,10 @@ export function undo(state, action = {}) {
     var past = history.past;
     var total = Math.max(1, action.total || 1);
     var index = past.length - Math.min(total, past.length);
-    var undoes = [...past.slice(index), present];
+    var undoes = past.slice(index).concat([present]);
 
     history.present = present = undoes.shift();
-    history.future = [...undoes, ...future];
+    history.future = undoes.concat(future);
     history.past = index > 0 ? past.slice(0, index) : [];
     history.timestamp = Date.now();
 
@@ -229,10 +229,10 @@ export function redo(state, action = {}) {
     var future = history.future;
     var total = Math.max(1, action.total || 1);
     var index = Math.min(total, future.length);
-    var redoes = [present, ...future.slice(0, index)];
+    var redoes = [present].concat(future.slice(0, index));
 
     history.present = present = redoes.pop();
-    history.past = [...past, ...redoes];
+    history.past = past.concat(redoes);
     history.future = index < future.length ? future.slice(index) : [];
     history.timestamp = Date.now();
 
