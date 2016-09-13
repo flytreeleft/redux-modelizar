@@ -3,32 +3,33 @@ import {
     isState
 } from './state';
 import map from './utils/map';
+import valueOf from './utils/valueOf';
 
 export default function (reducers, options = {}) {
     return (state = {}, action) => {
         if (!isState(state)) {
             var tag = 'Initialize state';
-            console.time(tag);
-            // console.profile(tag);
+            options.debug && console.time(tag);
+            // options.debug && console.profile(tag);
             state = createState(state);
-            // console.profileEnd();
-            console.timeEnd(tag);
+            // options.debug && console.profileEnd();
+            options.debug && console.timeEnd(tag);
         }
 
         map(reducers, (reducer, key) => {
             var tag = 'Reduce state: ' + key + ', ' + action.type;
-            console.time(tag);
-            // console.profile(tag);
+            options.debug && console.time(tag);
+            // options.debug && console.profile(tag);
             if (!state.has(key)) { // No initial value?
                 var stateForKey = reducer(undefined, action);
-                state = state.set(key, stateForKey);
+                state = state.set(key, valueOf(stateForKey));
             } else {
                 state = state.update(key, (state) => {
                     return reducer(state, action);
                 });
             }
-            // console.profileEnd();
-            console.timeEnd(tag);
+            // options.debug && console.profileEnd();
+            options.debug && console.timeEnd(tag);
         });
         return state;
     };

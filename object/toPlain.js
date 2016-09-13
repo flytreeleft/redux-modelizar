@@ -47,7 +47,6 @@ export default function toPlain(source, processor = emptyProcessor) {
     // [[topDstRefObjCount, topDst, topDstProp, src]]
     var stack = [-1, undefined, undefined, source];
     var src;
-    var srcId;
     var dst; // Target object for receiving source properties.
     var topDst; // Top object of target object.
     var topDstProp; // Property of top object.
@@ -55,7 +54,6 @@ export default function toPlain(source, processor = emptyProcessor) {
     var excludeKeys = [OBJECT_CLASS_SENTINEL];
     while (stack.length > 0) {
         src = valueOf(stack.pop());
-        srcId = guid(src);
         topDstProp = stack.pop();
         topDst = stack.pop();
         topDstRefObjCount = stack.pop();

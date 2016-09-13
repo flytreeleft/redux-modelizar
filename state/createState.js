@@ -409,7 +409,7 @@ export default function createState(initialState, pathLink = null, inited = fals
          */
         find: function (predicate) {
             if (!isFunction(predicate) || isPrimitive(_root)) {
-                return this;
+                return createState(undefined);
             }
 
             var expectedNode = null;
@@ -433,7 +433,7 @@ export default function createState(initialState, pathLink = null, inited = fals
          */
         filter: function (predicate) {
             if (!isFunction(predicate) || isPrimitive(_root)) {
-                return this;
+                return createState([]);
             }
 
             var nodes = isArray(_root) ? [] : {};
