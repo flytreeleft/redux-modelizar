@@ -405,7 +405,22 @@ export default function createState(initialState, pathLink = null, inited = fals
             return this;
         },
         /**
+         * Examples:
+         * ```
+         * // Primitive state root
+         * createState('a string').find(() => true) => createState(undefined);
+         * // Array state root
+         * createState([1, 2, 3]).find() => createState(undefined);
+         * createState([1, 2, 3]).find(() => false) => createState(null);
+         * createState([1, 2, 3]).find(() => true) => createState(1);
+         * // Object state root
+         * createState({a: 1, b: 2, c: 3}).find() => createState(undefined);
+         * createState({a: 1, b: 2, c: 3}).find(() => false) => createState(null);
+         * createState({a: 1, b: 2, c: 3}).find((state, path) => path === 'b') => createState(2);
+         * ```
+         *
          * @param {Function} predicate `(state, path, searchState) => Boolean`
+         * @return {State} The state whose `_root` is the matched value.
          */
         find: function (predicate) {
             if (!isFunction(predicate) || isPrimitive(_root)) {
@@ -429,11 +444,30 @@ export default function createState(initialState, pathLink = null, inited = fals
             }
         },
         /**
+         * Examples:
+         * ```
+         * // Primitive state root
+         * createState('a string').filter(() => true) => createState(undefined);
+         * // Array state root
+         * createState([1, 2, 3]).filter() => createState([]);
+         * createState([1, 2, 3]).filter(() => false) => createState([]);
+         * createState([1, 2, 3]).filter((state, path) => path === 1) => createState([2]);
+         * // Object state root
+         * createState({a: 1, b: 2, c: 3}).filter() => createState({});
+         * createState({a: 1, b: 2, c: 3}).filter(() => false) => createState({});
+         * createState({a: 1, b: 2, c: 3}).filter((state, path) => path === 'b') => createState({b: 2});
+         * ```
+         *
          * @param {Function} predicate `(state, path, searchState) => Boolean`
+         * @return {State} The state whose `_root` is the matched `key:value`.
          */
         filter: function (predicate) {
             if (!isFunction(predicate) || isPrimitive(_root)) {
-                return createState([]);
+                return createState(
+                    isArray(_root)
+                        ? []
+                        : (isPrimitive(_root) ? undefined : {})
+                );
             }
 
             var nodes = isArray(_root) ? [] : {};
@@ -607,6 +641,25 @@ export default function createState(initialState, pathLink = null, inited = fals
             var node = index < _root.length && index >= 0 ? _root[index] : undefined;
             return createState(node, _pathLink.branch(node), true);
         },
+        /**
+         * @param {Function} predicate `(state, index, searchState) => Boolean`
+         */
+        findIndex: function (predicate) {
+            var expectedIndex = -1;
+
+            if (isFunction(predicate)) {
+                this.forEach((state, index) => {
+                    var accept = predicate(state, index, this);
+
+                    if (accept) {
+                        expectedIndex = index;
+                        return false;
+                    }
+                });
+            }
+
+            return expectedIndex;
+        },
         clear: function () {
             return createState([]);
         },
@@ -617,7 +670,27 @@ export default function createState(initialState, pathLink = null, inited = fals
             return this.size() === 0;
         }
     };
-    var objectMethods = {};
+    var objectMethods = {
+        /**
+         * @param {Function} predicate `(state, key, searchState) => Boolean`
+         */
+        findKey: function (predicate) {
+            var expectedKey = null;
+
+            if (isFunction(predicate)) {
+                this.forEach((state, key) => {
+                    var accept = predicate(state, key, this);
+
+                    if (accept) {
+                        expectedKey = key;
+                        return false;
+                    }
+                });
+            }
+
+            return expectedKey;
+        }
+    };
 
     var methods = {...privateMethods, ...commonMethods};
     if (isArray(_root)) {
