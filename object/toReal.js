@@ -72,8 +72,8 @@ export default function toReal(source,
         roTop = stack.pop();
         roTopRefObjCount = stack.pop();
 
-        var existedRef = refs.has(srcId);
-        if (existedRef) {
+        var existingRef = refs.has(srcId);
+        if (existingRef) {
             ro = refs.get(srcId);
         } else {
             ro = createRealObj(src);
@@ -82,7 +82,7 @@ export default function toReal(source,
         }
 
         // Pre-processor may return a primitive value.
-        if (!existedRef && !isPrimitive(ro)) {
+        if (!existingRef && !isPrimitive(ro)) {
             var refObjCount = 0;
             Object.keys(src).forEach((key) => {
                 if (excludeKeys.indexOf(key) >= 0 || !isWritable(ro, key)) {
