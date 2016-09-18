@@ -256,7 +256,9 @@ function createProxyClass(cls) {
 
     var proxyClsName = classify(cls.name + PROXY_CLASS_SUFFIX);
     // Non-argument constructor
-    var proxyCls = new Function(`return function ${proxyClsName}() {}`)();
+    var proxyCls = new Function('base', `return function ${proxyClsName}() {
+        arguments.length > 0 && base.apply(this, arguments);
+    }`)(cls);
 
     proxyCls = extend(proxyCls, cls);
     proxyCls[IS_PROXIED_CLASS_SENTINEL] = true;
