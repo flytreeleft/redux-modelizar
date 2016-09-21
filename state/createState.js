@@ -292,10 +292,13 @@ export default function createState(initialState, pathLink = null, inited = fals
             }
         },
         /** Overwrite the existing or create a new one */
-        set: function (path, value) {
+        set: function (path, valueOrState) {
             if (arguments.length === 1) {
-                value = path;
+                valueOrState = path;
                 path = [];
+            }
+            if (valueOrState === this) {
+                return this;
             }
 
             var paths = extractPath(this, path);
@@ -303,6 +306,7 @@ export default function createState(initialState, pathLink = null, inited = fals
                 return this;
             }
 
+            var value = valueOf(valueOrState);
             return doChange(this, (root, pathLink) => {
                 return setNode(root, pathLink, paths, value);
             });
