@@ -103,7 +103,7 @@ export function createClassObj(obj) {
         clsName = getFunctionName(obj.constructor);
     }
 
-    return {
+    return !clsName ? {} : {
         [OBJECT_CLASS_SENTINEL]: clsName
     };
 }
