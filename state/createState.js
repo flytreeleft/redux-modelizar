@@ -62,11 +62,12 @@ function setNode(root, pathLink, paths, value) {
     });
 }
 
-var nodeUpdater = (updater, pathLink, node, topNode, path) => {
+var nodeUpdater = (updater, pathLink, node, topNode, path, createIfNotExist) => {
     if (!updater
         || (!isNullOrUndefined(path)
             && !isNullOrUndefined(topNode)
-            && !(path in topNode))) {
+            && !(path in topNode)
+            && !createIfNotExist)) {
         return;
     }
 
@@ -88,12 +89,16 @@ var nodeUpdater = (updater, pathLink, node, topNode, path) => {
  *          The function to update the target node.
  * @param {Function} [pathNodeUpdater]
  *          The function to update the path node(including target).
+ * @param {Boolean} [createIfNotExist=false]
+ *          If target node doesn't exist, create a new one or not.
  */
-function updateNode(root, pathLink, paths, targetNodeUpdater, pathNodeUpdater) {
+function updateNode(root, pathLink, paths,
+                    targetNodeUpdater, pathNodeUpdater,
+                    createIfNotExist = false) {
     return copyNodeByPath(root, pathLink, paths, (target, topNode, path) => {
-        return nodeUpdater(targetNodeUpdater, pathLink, target, topNode, path);
+        return nodeUpdater(targetNodeUpdater, pathLink, target, topNode, path, createIfNotExist);
     }, (node, topNode, path) => {
-        return nodeUpdater(pathNodeUpdater, pathLink, node, topNode, path);
+        return nodeUpdater(pathNodeUpdater, pathLink, node, topNode, path, createIfNotExist);
     });
 }
 
@@ -331,14 +336,20 @@ export default function createState(initialState, pathLink = null, inited = fals
                 return this;
             }
 
-            var value = valueOf(valueOrState);
             return doChange(this, (root, pathLink) => {
-                return setNode(root, pathLink, paths, value);
+                // Update will be faster than set when value is a big data.
+                if (isState(valueOrState)) {
+                    return updateNode(root, pathLink, paths, () => valueOrState, null, true);
+                } else {
+                    return setNode(root, pathLink, paths, valueOrState);
+                }
             });
         },
         /**
          * Update the existing one, if `path` is empty or not specified,
          * the root will be updated.
+         *
+         * NOTE: For non-existing node, this function will do nothing.
          *
          * @param {String/String[]} [path]
          *          e.g. `['a', 'b', 0]`, `'a.b[0]'`, `[1][2][0].c`.
