@@ -1,10 +1,10 @@
 import isArray from 'lodash/isArray';
 import uniq from 'lodash/uniq';
 
-import extend, {getBaseClass} from 'lib.utils.extend';
+import extend, {getBaseClass} from 'ui-designer/lib/utils/extend';
 import {
     classify
-} from 'lib.utils.lang';
+} from 'ui-designer/lib/utils/lang';
 
 import forEach from '../utils/forEach';
 import instance from '../utils/instance';
@@ -16,25 +16,86 @@ import {
     mutateState
 } from '../modelizar/actions';
 
-const PROXY_CLASS_SUFFIX = '$$ModelizarProxy';
-const IS_PROXIED_CLASS_SENTINEL = '__IS_PROXIED_CLASS__';
-const primitiveClasses = [Boolean, Number, String, Date, Function, RegExp];
-const proxyClassMap = new Map();
+export default function proxy(store, source, deep = true) {
+    if (isPrimitive(source) || isProxied(source)) {
+        return source;
+    } else if (!deep && (isArray(source) || source.constructor === Object)) {
+        return map(source, (value) => {
+            return proxy(store, value, false);
+        });
+    }
+
+    // NOTE: Recursion will cause heavy performance problem
+    // and 'Maximum call stack size' error.
+    var root;
+    // {[sourceObject]: proxiedObject}
+    var seen = new Map();
+    // [topDst, topDstProp, src]
+    var stack = [undefined, undefined, source];
+    var src;
+    var dst; // Target object for receiving source properties.
+    var topDst; // Top object of target object.
+    var topDstProp; // Property of top object.
+    while (stack.length > 0) {
+        src = stack.pop();
+        topDstProp = stack.pop();
+        topDst = stack.pop();
+
+        var isSrcProxied = seen.has(src);
+        if (isSrcProxied) {
+            dst = seen.get(src);
+        } else {
+            dst = createObj(src, store);
+            seen.set(src, dst);
+        }
+
+        if (topDst === undefined) {
+            root = topDst = dst;
+        } else {
+            topDst[topDstProp] = dst;
+        }
+
+        if (isSrcProxied) {
+            continue;
+        }
+
+        Object.keys(src).forEach((key) => {
+            if (!isWritable(dst, key)) {
+                return;
+            }
+
+            var value = src[key];
+            if (isPrimitive(value) || !deep) {
+                dst[key] = value;
+            } else {
+                stack.push(dst, key, value);
+            }
+        });
+    }
+
+    return root;
+}
+
+export function isProxied(obj) {
+    return !!(obj && isProxiedClass(obj.constructor));
+}
+
+const PROXIED_CLASS_SENTINEL = '__PROXIED_CLASS__';
+export function getProxiedClass(obj) {
+    return isProxied(obj) ? obj.constructor[PROXIED_CLASS_SENTINEL] : undefined;
+}
 
 function isPrimitive(obj) {
     return !(obj instanceof Object) || isPrimitiveClass(obj.constructor);
 }
 
+const primitiveClasses = [Boolean, Number, String, Date, Function, RegExp];
 function isPrimitiveClass(cls) {
-    return cls && primitiveClasses.indexOf(cls) >= 0;
-}
-
-function isProxied(obj) {
-    return obj && isProxiedClass(obj.constructor);
+    return !!(cls && primitiveClasses.indexOf(cls) >= 0);
 }
 
 function isProxiedClass(cls) {
-    return cls instanceof Function && cls[IS_PROXIED_CLASS_SENTINEL];
+    return !!(cls instanceof Function && cls[PROXIED_CLASS_SENTINEL]);
 }
 
 function deepClone(obj) {
@@ -231,7 +292,8 @@ function getMethodsUntilBase(cls) {
     });
 }
 
-function proxyClass(cls) {
+const proxyClassMap = new Map();
+export function proxyClass(cls) {
     if (isPrimitiveClass(cls)
         || cls === Object
         || cls === Array
@@ -249,6 +311,7 @@ function proxyClass(cls) {
     return proxyCls;
 }
 
+const PROXY_CLASS_SUFFIX = '$$ModelizarProxy';
 function createProxyClass(cls) {
     if (!cls.name || !getBaseClass(cls).name) {
         throw new Error('Class or it\'s base class can not be anonymous.');
@@ -261,7 +324,7 @@ function createProxyClass(cls) {
     }`)(cls);
 
     proxyCls = extend(proxyCls, cls);
-    proxyCls[IS_PROXIED_CLASS_SENTINEL] = true;
+    proxyCls[PROXIED_CLASS_SENTINEL] = cls;
 
     proxyClassMethod(proxyCls, cls);
     proxyClassStatic(proxyCls, cls);
@@ -330,64 +393,4 @@ function createObj(source, store) {
 
         return proxied;
     }
-}
-
-export default function proxy(store, source, deep = true) {
-    if (isPrimitive(source) || isProxied(source)) {
-        return source;
-    } else if (!deep && (isArray(source) || source.constructor === Object)) {
-        return map(source, (value) => {
-            return proxy(store, value, false);
-        });
-    }
-
-    // NOTE: Recursion will cause heavy performance problem
-    // and 'Maximum call stack size' error.
-    var root;
-    // {[sourceObject]: proxiedObject}
-    var seen = new Map();
-    // [topDst, topDstProp, src]
-    var stack = [undefined, undefined, source];
-    var src;
-    var dst; // Target object for receiving source properties.
-    var topDst; // Top object of target object.
-    var topDstProp; // Property of top object.
-    while (stack.length > 0) {
-        src = stack.pop();
-        topDstProp = stack.pop();
-        topDst = stack.pop();
-
-        var isSrcProxied = seen.has(src);
-        if (isSrcProxied) {
-            dst = seen.get(src);
-        } else {
-            dst = createObj(src, store);
-            seen.set(src, dst);
-        }
-
-        if (topDst === undefined) {
-            root = topDst = dst;
-        } else {
-            topDst[topDstProp] = dst;
-        }
-
-        if (isSrcProxied) {
-            continue;
-        }
-
-        Object.keys(src).forEach((key) => {
-            if (!isWritable(dst, key)) {
-                return;
-            }
-
-            var value = src[key];
-            if (isPrimitive(value) || !deep) {
-                dst[key] = value;
-            } else {
-                stack.push(dst, key, value);
-            }
-        });
-    }
-
-    return root;
 }

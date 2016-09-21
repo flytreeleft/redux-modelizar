@@ -26,9 +26,6 @@ export {
 } from './undoable';
 
 export {
-    isEqualNode
-} from './state/node';
-export {
     registerFunction
 } from './object/functions';
 export {
@@ -41,7 +38,11 @@ export {
     default as syncReal
 } from './object/syncReal';
 export {
-    default as proxy
+    default as diffReal
+} from './object/diffReal';
+export {
+    default as proxy,
+    isProxied
 } from './object/proxy';
 export {
     default as guid
