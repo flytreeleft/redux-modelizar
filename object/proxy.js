@@ -311,13 +311,13 @@ export function proxyClass(cls) {
     return proxyCls;
 }
 
-const PROXY_CLASS_SUFFIX = '$$ModelizarProxy';
+const PROXY_SUFFIX = '$$ModelizarProxy';
 function createProxyClass(cls) {
     if (!cls.name || !getBaseClass(cls).name) {
         throw new Error('Class or it\'s base class can not be anonymous.');
     }
 
-    var proxyClsName = classify(cls.name + PROXY_CLASS_SUFFIX);
+    var proxyClsName = classify(cls.name + PROXY_SUFFIX);
     // Non-argument constructor
     var proxyCls = new Function('base', `return function ${proxyClsName}() {
         arguments.length > 0 && base.apply(this, arguments);
@@ -336,7 +336,11 @@ function proxyClassMethod(proxyCls, cls) {
     getMethodsUntilBase(cls).forEach(methodName => {
         var callback = cls.prototype[methodName];
 
-        proxyCls.prototype[methodName] = function proxiedByModelizar() {
+        proxyCls.prototype[methodName] = new Function('proxiedMethod', `
+            return function ${cls.name}$${methodName}${PROXY_SUFFIX}() {
+                return proxiedMethod.apply(this, arguments);
+            };
+        `)(function proxiedMethod() {
             var ret;
 
             if (isMutationGuarded(this)) {
@@ -361,7 +365,7 @@ function proxyClassMethod(proxyCls, cls) {
                 }
             }
             return ret;
-        };
+        });
     });
 }
 
