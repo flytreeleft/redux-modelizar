@@ -18,22 +18,40 @@ import {
 } from './sentinels';
 import toReal from './toReal';
 
+const emptyProcessor = (obj) => obj;
+/**
+ * @param {*} target The target which receives the real object.
+ * @param {*} source The source which will be converted to real object.
+ * @param {*} oldSource The old source.
+ * @param {Function/Object} [processor=(ro,&nbsp;roTop,&nbsp;roTopProp,&nbsp;src)=>ro]
+ *          A pre processor for processing the real instance
+ *          before assigning real properties.
+ *          Or an object which contains pre and post processor.
+ * @param {Function} [processor.pre=(ro,&nbsp;roTop,&nbsp;roTopProp,&nbsp;src)=>ro]
+ *          The pre processor.
+ * @param {Function} [processor.post=(ro)=>ro] The post processor.
+ * @param {Map} [refs=new&nbsp;Map()] The `&lt;sourceObjectGUID, realObject&gt;` map.
+ */
 export default function diffReal(target,
                                  source,
                                  oldSource,
-                                 processor,
+                                 processor = emptyProcessor,
                                  refs = new Map()/*{[guid(sourceObject)]: realObject}*/) {
     if (isPrimitive(source)) {
         return valueOf(source);
     } else if (target === source) {
         return target;
     }
+    processor = {
+        pre: processor instanceof Function ? processor : processor.pre || emptyProcessor,
+        post: processor && processor.post || emptyProcessor
+    };
 
     // NOTE: Recursion will cause heavy performance problem
     // and 'Maximum call stack size' error.
     var root;
-    // [[roTop, roTopProp, old, src]]
-    var stack = [target, undefined, oldSource, source];
+    // [[roTopRefObjCount, roTop, roTopProp, old, src]]
+    var stack = [-1, target, undefined, oldSource, source];
     var src;
     var srcId;
     var old;
@@ -41,6 +59,7 @@ export default function diffReal(target,
     var roId;
     var roTop; // Top object of real object.
     var roTopProp; // Property of top object.
+    var roTopRefObjCount; // How may objects are referred by top object?
     var excludeKeys = [OBJECT_CLASS_SENTINEL];
     while (stack.length > 0) {
         src = valueOf(stack.pop());
@@ -48,6 +67,7 @@ export default function diffReal(target,
         old = valueOf(stack.pop());
         roTopProp = stack.pop();
         roTop = stack.pop();
+        roTopRefObjCount = stack.pop();
 
         if (src === old) {
             continue;
@@ -77,6 +97,7 @@ export default function diffReal(target,
         if (realNewOne) {
             ro = toReal(src, processor, refs);
         } else {
+            ro = processor.pre(ro, roTop, roTopProp, src);
             refs.set(srcId, ro);
         }
 
@@ -93,7 +114,9 @@ export default function diffReal(target,
         if (realNewOne || isPrimitive(ro)) {
             continue;
         }
+
         // Diff merge
+        var refObjCount = 0;
         Object.keys(src).forEach((key) => {
             if (excludeKeys.indexOf(key) >= 0 || !isWritable(ro, key)) {
                 return;
@@ -116,9 +139,18 @@ export default function diffReal(target,
                 ro[key] = parseRegExp(value);
             }
             else {
-                stack.push(ro, key, isPrimitive(old) ? undefined : old[key], value);
+                stack.push(refObjCount++, ro, key, isPrimitive(old) ? undefined : old[key], value);
             }
         });
+
+        // Post-processor for leaf node
+        if (refObjCount === 0) {
+            ro = processor.post(ro);
+        }
+        // Post-processor for top node
+        if (roTopRefObjCount === 0) {
+            roTop = processor.post(roTop);
+        }
     }
 
     return root;

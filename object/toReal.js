@@ -31,6 +31,17 @@ function createRealObj(source) {
 }
 
 const emptyProcessor = (obj) => obj;
+/**
+ * @param {*} source The source which will be converted to real object.
+ * @param {Function/Object} [processor=(ro,&nbsp;roTop,&nbsp;roTopProp,&nbsp;src)=>ro]
+ *          A pre processor for processing the real instance
+ *          before assigning real properties.
+ *          Or an object which contains pre and post processor.
+ * @param {Function} [processor.pre=(ro,&nbsp;roTop,&nbsp;roTopProp,&nbsp;src)=>ro]
+ *          The pre processor.
+ * @param {Function} [processor.post=(ro)=>ro] The post processor.
+ * @param {Map} [refs=new&nbsp;Map()] The `&lt;sourceObjectGUID, realObject&gt;` map.
+ */
 export default function toReal(source,
                                processor = emptyProcessor,
                                refs = new Map()/*{[guid(sourceObject)]: realObject}*/) {
@@ -41,15 +52,15 @@ export default function toReal(source,
     var pre = processor instanceof Function ? processor : processor.pre || emptyProcessor;
     var post = processor && processor.post || emptyProcessor;
     processor = {
-        pre: (obj) => {
-            obj = pre(obj);
-            !isPrimitive(obj) && refs.set(guid(obj), obj);
-            return obj;
+        pre: (ro, roTop, roTopProp, src) => {
+            ro = pre(ro, roTop, roTopProp, src);
+            !isPrimitive(ro) && refs.set(guid(ro), ro);
+            return ro;
         },
-        post: (obj) => {
-            obj = post(obj);
-            !isPrimitive(obj) && refs.set(guid(obj), obj);
-            return obj;
+        post: (ro) => {
+            ro = post(ro);
+            !isPrimitive(ro) && refs.set(guid(ro), ro);
+            return ro;
         }
     };
 
@@ -78,7 +89,7 @@ export default function toReal(source,
         } else {
             ro = createRealObj(src);
             // Pre-processor
-            ro = processor.pre(ro, roTop, roTopProp);
+            ro = processor.pre(ro, roTop, roTopProp, src);
         }
 
         // Pre-processor may return a primitive value.
@@ -120,7 +131,7 @@ export default function toReal(source,
         } else {
             roTop[roTopProp] = ro;
         }
-        // Post-processor
+        // Post-processor for top node
         if (roTopRefObjCount === 0) {
             roTop = processor.post(roTop);
         }

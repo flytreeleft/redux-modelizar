@@ -14,7 +14,22 @@ import {
     createClassObj
 } from './sentinels';
 
-function createObj(source) {
+/** Convert Function, Date, RegExp to a plain object. */
+function processSrcObj(source) {
+    if (source instanceof Function) {
+        source = createFunctionObj(source);
+    }
+    else if (source instanceof Date) {
+        source = createDateObj(source);
+    }
+    else if (source instanceof RegExp) {
+        source = createRegExpObj(source);
+    }
+
+    return source;
+}
+
+function createDstObj(source) {
     var obj = isArray(source) ? new Array(source.length) : createClassObj(source);
     guid(obj, guid(source));
 
@@ -25,10 +40,14 @@ const emptyProcessor = (obj) => obj;
 /**
  * NOTE: 仅处理自上而下存在的循环引用
  *
- * @param {*} [source]
- * @param {Function/Object} [processor]
- * @param {Function} [processor.pre] The pre-processor
- * @param {Function} [processor.post] The post-processor
+ * @param {*} source The source which will be converted to a plain object.
+ * @param {Function/Object} [processor=(dst,&nbsp;topDst,&nbsp;topDstProp,&nbsp;src)=>dst]
+ *          A pre processor for processing the plain object
+ *          before assigning other properties.
+ *          Or an object which contains pre and post processor.
+ * @param {Function} [processor.pre=(dst,&nbsp;topDst,&nbsp;topDstProp,&nbsp;src)=>dst]
+ *          The pre processor.
+ * @param {Function} [processor.post=(dst)=>dst] The post processor
  */
 export default function toPlain(source, processor = emptyProcessor) {
     if (isPrimitive(source)) {
@@ -63,9 +82,10 @@ export default function toPlain(source, processor = emptyProcessor) {
                             + ` ${topDst[OBJECT_CLASS_SENTINEL]}.${topDstProp} = ${src}`);
         }
 
-        dst = createObj(src);
+        src = processSrcObj(src);
+        dst = createDstObj(src);
         // Pre-processor
-        dst = processor.pre(dst, topDst, topDstProp);
+        dst = processor.pre(dst, topDst, topDstProp, src);
         refs.set(src, guid(dst));
         // Pre-processor may return a primitive value.
         if (!isRefObj(dst) && !isPrimitive(dst)) {
@@ -84,15 +104,6 @@ export default function toPlain(source, processor = emptyProcessor) {
                 var valueId = refs.get(value);
                 if (valueId) {
                     value = createRefObj(valueId);
-                }
-                else if (value instanceof Function) {
-                    value = createFunctionObj(value);
-                }
-                else if (value instanceof Date) {
-                    value = createDateObj(value);
-                }
-                else if (value instanceof RegExp) {
-                    value = createRegExpObj(value);
                 }
                 stack.push(refObjCount++, dst, key, value);
             });
