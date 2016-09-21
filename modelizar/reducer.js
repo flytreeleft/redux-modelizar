@@ -95,9 +95,8 @@ function mutate(state, action) {
                     if (insertion.source === undefined) { // insertion
                         newState = newState.set(elPaths, delta[index][0]);
                     } else { // moving
-                        newState = newState.update(elPaths, () => {
-                            return state.get(paths.concat([insertion.source]));
-                        });
+                        var srcPaths = paths.concat([insertion.source]);
+                        newState = newState.set(elPaths, state.get(srcPaths));
                     }
                 });
             }
