@@ -179,9 +179,17 @@ export default function createState(initialState, pathLink = null, inited = fals
     };
     var extractPath = (state, path) => {
         if (isArray(path)) {
-            return path;
-        } else if (isString(path)) {
-            return [path];
+            if (path.length === 0) {
+                return path;
+            } else {
+                path = path.join('.');
+            }
+        }
+
+        if (isString(path)) {
+            return path.replace(/\[([^\[\]]+)\]/g, '.$1')
+                       .replace(/(^\.+)|(\.+$)/g, '')
+                       .split(/\./);
         } else if (!isNullOrUndefined(path)) {
             throw new Error('Expected parameter "path" is'
                             + ' an Array or String. But received '
@@ -243,13 +251,15 @@ export default function createState(initialState, pathLink = null, inited = fals
             } else if (isPrimitive(pathOrIdOrNode)) {
                 if (pathOrIdOrNode in _root) {
                     return true;
-                } else if (!_pathLink.get(pathOrIdOrNode)) {
+                } else if (_pathLink.get(pathOrIdOrNode)) {
                     return !!_pathLink.path(pathOrIdOrNode);
                 } else {
-                    return false;
+                    pathOrIdOrNode = [pathOrIdOrNode];
                 }
-            } else if (isArray(pathOrIdOrNode)) {
-                var paths = pathOrIdOrNode;
+            }
+
+            if (isArray(pathOrIdOrNode)) {
+                var paths = extractPath(this, pathOrIdOrNode);
                 var node = _root;
                 for (var i = 0; i < paths.length && !isPrimitive(node); i++) {
                     var path = paths[i];
@@ -259,10 +269,14 @@ export default function createState(initialState, pathLink = null, inited = fals
                     node = node[path];
                 }
                 return i === paths.length;
-            } else {
+            } else { // Check object
                 return !!_pathLink.path(pathOrIdOrNode);
             }
         },
+        /**
+         * @param {String/Array} path
+         *          e.g. `['a', 'b', 0]`, `'a.b[0]'`, `[1][2][0].c`.
+         */
         val: function (path) {
             return this.get(path).valueOf();
         },
@@ -274,9 +288,14 @@ export default function createState(initialState, pathLink = null, inited = fals
          * state.get([]).valueOf(); // => [{}, {a: 1, b: {c: 2}}]
          * state.get(1).valueOf(); // => {a: 1, b: {c: 2}}
          * state.get([1, b]).valueOf(); // => {c: 2}
+         * state.get('[1].b').valueOf(); // => {c: 2}
          * state.get(3).valueOf(); // => undefined
          * state.get([1, b, d]).valueOf(); // => undefined
+         * state.get('[1].b.d').valueOf(); // => undefined
          * ```
+         *
+         * @param {String/Array} path
+         *          e.g. `['a', 'b', 0]`, `'a.b[0]'`, `[1][2][0].c`.
          */
         get: function (path) {
             var paths = extractPath(this, path);
@@ -291,7 +310,13 @@ export default function createState(initialState, pathLink = null, inited = fals
                 return createState(node, _pathLink.branch(node), true);
             }
         },
-        /** Overwrite the existing or create a new one */
+        /**
+         * Overwrite the existing or create a new one.
+         *
+         * @param {String/Array} path
+         *          e.g. `['a', 'b', 0]`, `'a.b[0]'`, `[1][2][0].c`.
+         * @param {*} valueOrState General value or a `State` instance.
+         */
         set: function (path, valueOrState) {
             if (arguments.length === 1) {
                 valueOrState = path;
@@ -316,6 +341,7 @@ export default function createState(initialState, pathLink = null, inited = fals
          * the root will be updated.
          *
          * @param {String/String[]} [path]
+         *          e.g. `['a', 'b', 0]`, `'a.b[0]'`, `[1][2][0].c`.
          * @param {Function/*} targetNodeUpdater Signature: `(state, path) => state`.
          *          Literal value is accepted.
          * @param {Function} [pathNodeUpdater] Default `(state, path) => state`.
@@ -368,6 +394,7 @@ export default function createState(initialState, pathLink = null, inited = fals
          * Do map with root node or the specified node.
          *
          * @param {String/String[]} [path]
+         *          e.g. `['a', 'b', 0]`, `'a.b[0]'`, `[1][2][0].c`.
          * @param {Function} mapper `(state, path) => state`.
          *          If return null or undefined,
          *          the original will not be changed.
@@ -392,6 +419,7 @@ export default function createState(initialState, pathLink = null, inited = fals
         },
         /**
          * @param {String/String[]} [path]
+         *          e.g. `['a', 'b', 0]`, `'a.b[0]'`, `[1][2][0].c`.
          * @param {Function} sideEffect `(state, path) => Boolean`.
          */
         forEach: function (path, sideEffect) {
