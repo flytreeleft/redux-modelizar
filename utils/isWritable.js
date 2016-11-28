@@ -4,5 +4,5 @@ export default function (obj, prop) {
     }
 
     var des = Object.getOwnPropertyDescriptor(obj, prop);
-    return !des || des.writable;
+    return !des || des.writable !== false;
 }
