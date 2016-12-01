@@ -42,9 +42,11 @@ function undoableMutate(state, action = {}, filter = () => false, rootState) {
 }
 
 const compare = {
+    /** Ascending order */
     numerically: function (a, b) {
         return a - b;
     },
+    /** Ascending order */
     numericallyBy: function (name) {
         return function (a, b) {
             return a[name] - b[name];
@@ -69,13 +71,13 @@ function mutate(state, action) {
                         if (key[0] === '_') {
                             var index = parseInt(key.slice(1), 10);
                             toRemove.push(index);
-                            if (delta[2] === 3) {
+                            if (delta[2] === 3) { // moving
                                 toInsert.push({
                                     index: delta[1],
                                     source: index
                                 });
                             }
-                        } else if (delta.length === 1) {
+                        } else if (delta.length === 1) { // insertion
                             toInsert.push({
                                 index: parseInt(key, 10)
                             });
@@ -83,21 +85,25 @@ function mutate(state, action) {
                         // Element changing will be processed in next traversing.
                     }
                 });
-                // Removing or inserting elements from tail to head
+                // Removing elements by descending order to avoid sawing our own floor.
                 // NOTE: Using `.remove` maybe faster than using `.filter`
                 // when the state contains huge number data.
-                toRemove.sort(compare.numerically).forEach((index) => {
+                toRemove.sort(compare.numerically).reverse().forEach((index) => {
                     newState = newState.remove(paths.concat([index]));
                 });
+                // Inserting new elements by ascending order.
                 toInsert.sort(compare.numericallyBy('index')).forEach((insertion) => {
                     var index = insertion.index;
-                    var elPaths = paths.concat([index]);
+                    var el;
                     if (insertion.source === undefined) { // insertion
-                        newState = newState.set(elPaths, delta[index][0]);
+                        el = delta[index][0];
                     } else { // moving
                         var srcPaths = paths.concat([insertion.source]);
-                        newState = newState.set(elPaths, state.get(srcPaths));
+                        el = state.get(srcPaths);
                     }
+                    newState = newState.update(paths, (state) => {
+                        return state.insert(index, [el]);
+                    });
                 });
             }
 

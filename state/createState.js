@@ -1,6 +1,7 @@
 import isArray from 'lodash/isArray';
 import isFunction from 'lodash/isFunction';
 import isString from 'lodash/isString';
+import isNumber from 'lodash/isNumber';
 import forEach from 'lodash/forEach';
 
 import createNE from '../utils/createNE';
@@ -195,7 +196,9 @@ export default function createState(initialState, pathLink = null, inited = fals
             return path.replace(/\[([^\[\]]+)\]/g, '.$1')
                        .replace(/(^\.+)|(\.+$)/g, '')
                        .split(/\./);
-        } else if (!isNullOrUndefined(path)) {
+        } else if (isNumber(path)) {
+            return [path];
+        } else {
             throw new Error('Expected parameter "path" is'
                             + ' an Array or String. But received '
                             + path);
@@ -653,6 +656,10 @@ export default function createState(initialState, pathLink = null, inited = fals
 
             return createState(nodes, pathLink, true);
         },
+        /**
+         * @param {Number} index
+         * @param {Array} values
+         */
         insert: function (index, values) {
             if (values.length === 0) {
                 return this;

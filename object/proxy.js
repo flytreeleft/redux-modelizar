@@ -9,6 +9,7 @@ import {
 import forEach from '../utils/forEach';
 import instance from '../utils/instance';
 import isWritable from '../utils/isWritable';
+import isPlainObject from '../utils/isPlainObject';
 import map from '../utils/map';
 import traverse from '../object/traverse';
 
@@ -131,10 +132,13 @@ function deepClone(obj) {
  * delta = {
  *   _t: 'a', // indicates this applies to an array
  *   '1': [{'name': 'Cordoba'}], // inserted at index 1
- *   '_3': [{'name': 'La Plata'}, 0, 0], // removed '{'name': 'La Plata'}' from index 3
- *   '_4': ['obj', 2, 3] // move 'obj' from index 4 to index 2
+ *   '_3': [{'name': 'La Plata'}, 0, 0], // removed `{'name': 'La Plata'}` from index 3
+ *   '_4': [obj, 2, 3] // move `obj` from index 4 to index 2
  * }
  * ```
+ *
+ * @param {*} leftObj The old object.
+ * @param {*} rightObj The new object.
  */
 function diffObj(leftObj, rightObj) {
     var diff = {};
@@ -196,6 +200,24 @@ function diffObj(leftObj, rightObj) {
         refs.set(right, [left, delta]);
     });
 
+    traverse(diff, (obj, top, path) => {
+        if (!isPlainObject(obj)) {
+            return false;
+        }
+
+        if (top) {
+            var keys = Object.keys(obj);
+            if (keys.length === 0
+                || (keys.length === 1 && obj._t)) {
+                delete top[path];
+                return false;
+            }
+        } else if (Object.keys(obj).length === 1 && obj._t) {
+            delete obj._t;
+            return false;
+        }
+    });
+
     return diff;
 }
 
@@ -219,7 +241,7 @@ function addMutationGuard(obj) {
         guard.descriptors[prop] = des;
         // TODO How to receive new value of the non-configurable but writable property?
         guard.mutations[prop] = deepClone(value);
-        if (!des.configurable || !des.writable) {
+        if (!des.configurable || des.writable === false) {
             return;
         }
 
@@ -354,7 +376,7 @@ function proxyClassMethod(proxyCls, cls) {
                     guard = addMutationGuard(this);
                     ret = callback.apply(this, arguments);
                 } finally {
-                    mutations = removeMutationGuard(this, guard);
+                    guard && (mutations = removeMutationGuard(this, guard));
                 }
 
                 var diff = diffObj(this, mutations);

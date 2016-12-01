@@ -1,3 +1,3 @@
 export default function isPlainObject(obj) {
-    return obj && obj.constructor === Object && obj.constructor === undefined;
+    return obj && (obj.constructor === Object || obj.constructor === undefined);
 }

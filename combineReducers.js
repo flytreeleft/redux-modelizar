@@ -5,6 +5,7 @@ import {
 import map from './utils/map';
 import valueOf from './utils/valueOf';
 
+// TODO 提供性能监控中间件，打印每次action的时间消耗
 export default function (reducers, options = {}) {
     return (state = {}, action) => {
         if (!isState(state)) {

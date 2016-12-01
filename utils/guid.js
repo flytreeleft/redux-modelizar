@@ -31,7 +31,11 @@ export default function guid(obj, id) {
         return obj;
     }
 
-    var value = obj.valueOf();
+    // NOTE: In ../undoable/reducer.js:88,
+    // an overwritten `valueOf` will be set to the state object,
+    // and the new `valueOf` will be converted to a plain object,
+    // so we should check it whether a function or not before calling.
+    var value = obj.valueOf instanceof Function ? obj.valueOf() : obj;
     if ((!obj[GUID_SENTINEL] && !value[GUID_SENTINEL]) || id) {
         bind(obj, id || next());
     }
