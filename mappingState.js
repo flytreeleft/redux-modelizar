@@ -25,7 +25,7 @@ export default function (store, target, mapping = {}) {
                 return;
             }
 
-            var tag = 'Mapping state - diffReal';
+            // var tag = 'Mapping state - diffReal';
             // console.time(tag);
             // console.profile(tag);
             target[prop] = diffReal(target[prop], current, previous, {
