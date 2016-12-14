@@ -165,7 +165,7 @@ function forEachNode(root, pathLink, paths, sideEffect) {
 
 const IS_IMMUTABLE_STATE_SENTINEL = '__[IS_IMMUTABLE_STATE]__';
 export function isState(obj) {
-    return obj && Object.getPrototypeOf(obj)[IS_IMMUTABLE_STATE_SENTINEL] === true;
+    return obj && !isPrimitive(obj) && Object.getPrototypeOf(obj)[IS_IMMUTABLE_STATE_SENTINEL] === true;
 }
 
 export default function createState(initialState, pathLink = null, inited = false) {
@@ -246,28 +246,43 @@ export default function createState(initialState, pathLink = null, inited = fals
         is: function (obj) {
             return this.same(obj) || guid(valueOf(this)) === guid(valueOf(obj));
         },
-        path: function (idOrNode) {
-            return nodePath(_root, _pathLink, idOrNode);
+        /**
+         * @param {*} idOrNodeOrState The node object, or the id of node, or a {@link State}.
+         */
+        path: function (idOrNodeOrState) {
+            if (isState(idOrNodeOrState)) {
+                idOrNodeOrState = guid(idOrNodeOrState);
+            }
+            return nodePath(_root, _pathLink, idOrNodeOrState);
         },
         keys: function () {
             var excludeKeys = [GUID_SENTINEL, OBJECT_CLASS_SENTINEL];
             return Object.keys(_root).filter((key) => excludeKeys.indexOf(key) < 0);
         },
-        has: function (pathOrIdOrNode) {
+        /**
+         * Check if the specified value is in the state tree or not.
+         *
+         * @param {*} pathOrIdOrNodeOrState The node object, or the id, path of node, or a {@link State}.
+         */
+        has: function (pathOrIdOrNodeOrState) {
+            if (isState(pathOrIdOrNodeOrState)) {
+                pathOrIdOrNodeOrState = guid(pathOrIdOrNodeOrState);
+            }
+
             if (isPrimitive(_root)) {
                 return false;
-            } else if (isPrimitive(pathOrIdOrNode)) {
-                if (pathOrIdOrNode in _root) {
+            } else if (isPrimitive(pathOrIdOrNodeOrState)) {
+                if (pathOrIdOrNodeOrState in _root) {
                     return true;
-                } else if (_pathLink.get(pathOrIdOrNode)) {
-                    return !!_pathLink.path(pathOrIdOrNode);
+                } else if (_pathLink.get(pathOrIdOrNodeOrState)) {
+                    return !!_pathLink.path(pathOrIdOrNodeOrState);
                 } else {
-                    pathOrIdOrNode = [pathOrIdOrNode];
+                    pathOrIdOrNodeOrState = [pathOrIdOrNodeOrState];
                 }
             }
 
-            if (isArray(pathOrIdOrNode)) {
-                var paths = extractPath(this, pathOrIdOrNode);
+            if (isArray(pathOrIdOrNodeOrState)) {
+                var paths = extractPath(this, pathOrIdOrNodeOrState);
                 var node = _root;
                 for (var i = 0; i < paths.length && !isPrimitive(node); i++) {
                     var path = paths[i];
@@ -278,12 +293,20 @@ export default function createState(initialState, pathLink = null, inited = fals
                 }
                 return i === paths.length;
             } else { // Check object
-                return !!_pathLink.path(pathOrIdOrNode);
+                return !!_pathLink.path(pathOrIdOrNodeOrState);
             }
         },
         /**
-         * @param {String/Array} path
+         * Example:
+         * ```
+         * var state = createState([{}, {a: 1, b: {c: 2}}]);
+         * state.val(); // === state.valueOf(), state.val([])
+         * state.val([]); // => [{}, {a: 1, b: {c: 2}}]
+         * ```
+         *
+         * @param {String/Array} [path]
          *          e.g. `['a', 'b', 0]`, `'a.b[0]'`, `[1][2][0].c`.
+         * @return {*}
          */
         val: function (path) {
             return this.get(path).valueOf();
@@ -292,21 +315,22 @@ export default function createState(initialState, pathLink = null, inited = fals
          * Example:
          * ```
          * var state = createState([{}, {a: 1, b: {c: 2}}]);
-         * state.get().valueOf(); // => undefined
-         * state.get([]).valueOf(); // => [{}, {a: 1, b: {c: 2}}]
-         * state.get(1).valueOf(); // => {a: 1, b: {c: 2}}
-         * state.get([1, b]).valueOf(); // => {c: 2}
-         * state.get('[1].b').valueOf(); // => {c: 2}
-         * state.get(3).valueOf(); // => undefined
-         * state.get([1, b, d]).valueOf(); // => undefined
-         * state.get('[1].b.d').valueOf(); // => undefined
+         * state.get(); // === state.get([])
+         * state.get([]); // => createState([{}, {a: 1, b: {c: 2}}])
+         * state.get(1); // => createState({a: 1, b: {c: 2}})
+         * state.get([1, b]); // => createState({c: 2})
+         * state.get('[1].b'); // => createState(({c: 2})
+         * state.get(3); // => createState(undefined)
+         * state.get([1, b, d]); // => createState(undefined)
+         * state.get('[1].b.d'); // => createState(undefined)
          * ```
          *
-         * @param {String/Array} path
+         * @param {String/Array} [path]
          *          e.g. `['a', 'b', 0]`, `'a.b[0]'`, `[1][2][0].c`.
+         * @return {State}
          */
         get: function (path) {
-            var paths = extractPath(this, path);
+            var paths = path !== undefined ? extractPath(this, path) : [];
             var node = getNodeByPath(_root, paths);
             node = isUnreachableNode(node) ? undefined : node;
 
@@ -323,7 +347,7 @@ export default function createState(initialState, pathLink = null, inited = fals
          *
          * @param {String/Array} path
          *          e.g. `['a', 'b', 0]`, `'a.b[0]'`, `[1][2][0].c`.
-         * @param {*} valueOrState General value or a `State` instance.
+         * @param {*} valueOrState General value or a {@link State}.
          */
         set: function (path, valueOrState) {
             if (arguments.length === 1) {
@@ -340,7 +364,7 @@ export default function createState(initialState, pathLink = null, inited = fals
             }
 
             return doChange(this, (root, pathLink) => {
-                // Update will be faster than set when value is a big data.
+                // `update` will be faster than `set` when value is a big data.
                 if (isState(valueOrState)) {
                     return updateNode(root, pathLink, paths, () => valueOrState, null, true);
                 } else {

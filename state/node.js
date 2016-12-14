@@ -39,7 +39,7 @@ export function initNode(node, pathLink, topNode = null, path = null) {
         return topNode && !isPrimitive(node) && !!pathLink.path(topNode, node);
     };
 
-    var tag = 'Initial node - toPlain';
+    // var tag = 'Initial node - toPlain';
     // console.profile(tag);
     // console.time(tag);
     var newNode = toPlain(node, {
@@ -160,6 +160,7 @@ export function copyNodeByPath(root, pathLink, paths, targetNodeProcessor, pathN
     if (i < paths.length) {
         return root;
     }
+    var origNode = node;
     // Process the target node.
     var processedNode = targetNodeProcessor
         ? targetNodeProcessor(node, topNode, path, paths.slice())
@@ -172,7 +173,7 @@ export function copyNodeByPath(root, pathLink, paths, targetNodeProcessor, pathN
     // Go back to the root following paths.
     do {
         if (shouldBeDelete(node)) { // Should be cut?
-            pathLink.remove(node);
+            pathLink.remove(origNode);
             // Cut the node from current top
             if (topNode) {
                 topNode = cloneNode(topNode);
@@ -198,19 +199,19 @@ export function copyNodeByPath(root, pathLink, paths, targetNodeProcessor, pathN
             processedNode = pathNodeProcessor
                 ? pathNodeProcessor(node, topNode, path, paths.slice(0, pathNodes.length))
                 : undefined;
-            pathLink.remove(node);
             if (processedNode !== undefined && processedNode !== node) {
                 node = processedNode;
                 if (shouldBeDelete(node)) {
                     continue; // Cut the node first.
                 }
             }
+            pathLink.remove(origNode);
             pathLink.add(node, topNode, path);
             Object.freeze(node);
             // Set the processed node to top.
             if (topNode) {
                 topNode[path] = node;
-                node = topNode;
+                origNode = node = topNode;
             }
         }
         // Move to the top node.
