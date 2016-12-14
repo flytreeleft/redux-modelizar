@@ -1,5 +1,4 @@
 import isArray from 'lodash/isArray';
-import uniq from 'lodash/uniq';
 
 import extend, {getBaseClass} from 'ui-designer/lib/utils/extend';
 import {
@@ -12,6 +11,9 @@ import isWritable from '../utils/isWritable';
 import isPlainObject from '../utils/isPlainObject';
 import map from '../utils/map';
 import traverse from '../object/traverse';
+import {
+    getMethodsUntilBase
+} from '../utils/class';
 
 import {
     mutateState
@@ -291,26 +293,6 @@ function bindStore(store, obj) {
         writable: false,
         enumerable: false,
         value: store
-    });
-}
-
-function getMethodsUntilBase(cls) {
-    var proto = cls.prototype;
-    var methods = [];
-
-    while (proto && proto.constructor !== Object) {
-        // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/getOwnPropertyNames
-        var names = Object.getOwnPropertyNames(proto)
-                          .filter(name => proto[name] instanceof Function);
-        Array.prototype.push.apply(methods, names);
-
-        proto = Object.getPrototypeOf(proto);
-    }
-
-    return uniq(methods).filter(name => {
-        return ['constructor', 'override', 'superclass',
-                'supr', 'extend'
-               ].indexOf(name) < 0;
     });
 }
 

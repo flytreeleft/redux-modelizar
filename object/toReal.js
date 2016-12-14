@@ -17,17 +17,14 @@ import {
     parseRegExp
 } from './sentinels';
 
-function createRealObj(source) {
+export function createRealObj(source) {
     var ctor = parseObjClass(source);
     if (!ctor) {
         throw new Error(`No registered Class found for ${source}.`
                         + 'Please make sure this object is converted by #toPlain(obj).');
     }
 
-    var ro = instance(ctor);
-    guid(ro, guid(source));
-
-    return ro;
+    return instance(ctor);
 }
 
 const emptyProcessor = (obj) => obj;
@@ -88,6 +85,7 @@ export default function toReal(source,
             ro = refs.get(srcId);
         } else {
             ro = createRealObj(src);
+            guid(ro, srcId);
             // Pre-processor
             ro = processor.pre(ro, roTop, roTopProp, src);
         }

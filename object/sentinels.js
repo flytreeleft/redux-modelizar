@@ -22,7 +22,7 @@ export function isRefObj(obj) {
     if (!obj) {
         return false;
     }
-    return obj[IS_REFERENCE_SENTINEL];
+    return !!obj[IS_REFERENCE_SENTINEL];
 }
 
 export function parseRefKey(obj) {
@@ -40,7 +40,7 @@ export function isFunctionObj(obj) {
     if (!obj) {
         return false;
     }
-    return obj[IS_FUNCTION_SENTINEL];
+    return !!obj[IS_FUNCTION_SENTINEL];
 }
 
 export function parseFunction(obj) {
@@ -60,7 +60,7 @@ export function isDateObj(obj) {
     if (!obj) {
         return false;
     }
-    return obj[IS_DATE_SENTINEL];
+    return !!obj[IS_DATE_SENTINEL];
 }
 
 export function parseDate(obj) {
@@ -80,7 +80,7 @@ export function isRegExpObj(obj) {
     if (!obj) {
         return false;
     }
-    return obj[IS_REG_EXP_SENTINEL];
+    return !!obj[IS_REG_EXP_SENTINEL];
 }
 
 export function parseRegExp(obj) {
@@ -115,6 +115,6 @@ export function parseObjClass(obj) {
         name = obj[OBJECT_CLASS_SENTINEL];
         return name ? getFunctionByName(name) : undefined;
     } else {
-        return obj && obj.constructor;
+        return obj !== null && obj !== undefined ? obj.constructor : undefined;
     }
 }

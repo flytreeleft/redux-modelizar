@@ -9,7 +9,7 @@ import valueOf from './utils/valueOf';
 export default function (reducers, options = {}) {
     return (state = {}, action) => {
         if (!isState(state)) {
-            var tag = 'Initialize state';
+            // var tag = 'Initialize state';
             // options.debug && console.time(tag);
             // options.debug && console.profile(tag);
             state = createState(state);
