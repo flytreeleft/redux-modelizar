@@ -6,20 +6,26 @@ export {
 } from './modelizar/actions';
 
 export {
+    createState
+} from './state';
+export {
+    default as createStore
+} from './createStore';
+export {
     default as combineReducers
 } from './combineReducers';
+export {
+    default as compose
+} from './compose';
+export {
+    default as applyMiddleware
+} from './applyMiddleware';
 export {
     default as mappingState
 } from './mappingState';
 export {
     default as enableReduxDevTools
 } from './enableReduxDevTools';
-export {
-    createState
-} from './state';
-export {
-    default as createStore
-} from './createStore';
 
 export {
     default as modelizar
