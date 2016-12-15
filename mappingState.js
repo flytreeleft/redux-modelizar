@@ -48,9 +48,11 @@ export default function (store, target, mapping = {}) {
             // console.profileEnd();
             // console.timeEnd(tag);
         });
-    };
 
-    store.subscribe(bind);
-    // Trigger first binding.
-    bind();
+        return bind;
+    };
+    // Trigger and subscribe
+    store.subscribe(bind());
+
+    return target;
 }
