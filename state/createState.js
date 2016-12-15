@@ -40,11 +40,17 @@ import {
  * @param {Object} root
  * @param {PathLink} pathLink
  * @param {String/Object} idOrNode
- * @return {Array} Return `undefined` if the specified node doesn't exist.
+ * @return {Array/null} Return `null` if the specified node doesn't exist.
  */
 function nodePath(root, pathLink, idOrNode) {
     idOrNode = valueOf(idOrNode);
-    return pathLink.path(idOrNode);
+
+    var paths = pathLink.path(idOrNode);
+    var node = getNodeByPath(root, paths);
+    node = isUnreachableNode(node) ? null : node;
+
+    // TODO 要确保pathLink.path的准确性，需解决PathLink在从下到上合并过程中未将砍掉的分支合并到目标tree的问题
+    return guid(node) === guid(idOrNode) ? paths : undefined;
 }
 
 /**
@@ -177,6 +183,7 @@ export default function createState(initialState, pathLink = null, inited = fals
         var pathLink = _pathLink.branch();
         var node = changer(_root, pathLink);
 
+        pathLink.replace(_root, node);
         if (node === _root) {
             return state;
         } else {
@@ -248,11 +255,13 @@ export default function createState(initialState, pathLink = null, inited = fals
         },
         /**
          * @param {*} idOrNodeOrState The node object, or the id of node, or a {@link State}.
+         * @return {Array/null} Return `null` if cannot reach the target.
          */
         path: function (idOrNodeOrState) {
             if (isState(idOrNodeOrState)) {
                 idOrNodeOrState = guid(idOrNodeOrState);
             }
+
             return nodePath(_root, _pathLink, idOrNodeOrState);
         },
         keys: function () {
@@ -265,17 +274,11 @@ export default function createState(initialState, pathLink = null, inited = fals
          * @param {*} pathOrIdOrNodeOrState The node object, or the id, path of node, or a {@link State}.
          */
         has: function (pathOrIdOrNodeOrState) {
-            if (isState(pathOrIdOrNodeOrState)) {
-                pathOrIdOrNodeOrState = guid(pathOrIdOrNodeOrState);
-            }
-
             if (isPrimitive(_root)) {
                 return false;
             } else if (isPrimitive(pathOrIdOrNodeOrState)) {
-                if (pathOrIdOrNodeOrState in _root) {
-                    return true;
-                } else if (_pathLink.get(pathOrIdOrNodeOrState)) {
-                    return !!_pathLink.path(pathOrIdOrNodeOrState);
+                if (_pathLink.get(pathOrIdOrNodeOrState)) {
+                    return !!this.path(pathOrIdOrNodeOrState);
                 } else {
                     pathOrIdOrNodeOrState = [pathOrIdOrNodeOrState];
                 }
@@ -293,7 +296,7 @@ export default function createState(initialState, pathLink = null, inited = fals
                 }
                 return i === paths.length;
             } else { // Check object
-                return !!_pathLink.path(pathOrIdOrNodeOrState);
+                return !!this.path(pathOrIdOrNodeOrState);
             }
         },
         /**
