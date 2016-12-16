@@ -17,7 +17,7 @@ import {
 } from './mapper/reducer';
 import mapState from './mapper/mapState';
 
-export const REDUX_MODELIZAR_BATCH = REDUX_MODELIZAR_NAMESPACE + '/BATCH';
+export const MODELIZAR_BATCH = REDUX_MODELIZAR_NAMESPACE + '/BATCH';
 
 function modelizar(reducer) {
     return function mutation(state, action = {}) {
@@ -26,7 +26,7 @@ function modelizar(reducer) {
         }
 
         switch (action.type) {
-            case REDUX_MODELIZAR_BATCH:
+            case MODELIZAR_BATCH:
                 action.actions.forEach((action) => {
                     state = mutation(state, action);
                 });
@@ -41,7 +41,7 @@ export default function (reducer, preloadedState, enhancer) {
     var args = [...arguments];
     args[0] = modelizar(mapper(reducer));
 
-    var store = createStore(...args);
+    var store = createStore.apply(undefined, args);
     var batching = false;
     var actions = [];
     var {dispatch, getState, subscribe} = store;
@@ -53,7 +53,7 @@ export default function (reducer, preloadedState, enhancer) {
 
     function doBatch(meta) {
         var action = {
-            type: REDUX_MODELIZAR_BATCH,
+            type: MODELIZAR_BATCH,
             meta,
             actions: [].concat(actions)
         };
@@ -118,7 +118,7 @@ export default function (reducer, preloadedState, enhancer) {
 
                 return bind;
             };
-            // Trigger and subscribe.
+            // Trigger first binding.
             subscribe(bind());
 
             return target;

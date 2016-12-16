@@ -35,10 +35,6 @@ PathLink.prototype.add = function (node, topNode, path) {
 };
 
 PathLink.prototype.replace = function (oldNode, newNode) {
-    if (guid(oldNode) === guid(newNode)) {
-        return;
-    }
-
     var lnk = this.get(oldNode);
     this.remove(oldNode);
 
@@ -87,13 +83,13 @@ PathLink.prototype.has = function (nodeOrId) {
 };
 
 /**
- * @return {Array/null} The path from root to the specified node.
+ * @return {Array/undefined} The path from root to the specified node.
  *          If node doesn't exist, return `undefined`.
  */
 PathLink.prototype.path = function (start, end = this._root) {
     var lnk = this.get(start);
     if (!lnk) {
-        return null;
+        return;
     }
 
     var endLnk = this.get(end);
@@ -103,7 +99,7 @@ PathLink.prototype.path = function (start, end = this._root) {
         // If it's a broken path or can not reach to current root,
         // return `undefined`.
         if (isNullOrUndefined(path)) {
-            return null;
+            return;
         }
 
         paths.unshift(path);
@@ -142,23 +138,20 @@ PathLink.prototype.isBranchOf = function (pathLink) {
         if (parent === pathLink) {
             return true;
         }
-        parent = parent._parent;
     }
     return false;
 };
 
 /**
- * Mount the specified tree to current path link.
- *
- * @param {PathLink} sourcePathLink The path link of the mounted tree.
- * @param {*} sourceRoot The root node of mounted tree.
- * @param {Object} mountNode The mounted point node of current tree.
+ * @param {PathLink} sourcePathLink
+ * @param {*} sourceRoot
+ * @param {Object} mountNode
  */
 PathLink.prototype.mount = function (sourcePathLink, sourceRoot, mountNode) {
     if (isPrimitive(sourceRoot)) {
         // For leaf node, no need to update path link.
         return this;
-    } else if (/*sourcePathLink._parent === this*/sourcePathLink.isBranchOf(this)) {
+    } else if (sourcePathLink._parent === this) {
         sourcePathLink._link.forEach((lnk, nodeId) => {
             this._link.set(nodeId, lnk);
         });
