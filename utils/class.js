@@ -19,3 +19,13 @@ export function getMethodsUntilBase(cls) {
                ].indexOf(name) < 0;
     });
 }
+
+export function isClass(fn) {
+    if (!(fn instanceof Function)) {
+        return false;
+    }
+
+    // Assume a class function should bind at least one method to prototype.
+    var proto = fn.prototype;
+    return !!proto && Object.keys(proto).length > 0;
+}

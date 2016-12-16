@@ -4,15 +4,16 @@
 var queue = [];
 var dirty = false;
 var fn;
-var hasPostMessage = !!global.postMessage && (typeof Window != 'undefined') && (global instanceof Window);
+var hasPostMessage = !!global.postMessage && (typeof Window !== 'undefined') && (global instanceof Window);
 var messageName = 'nexttick';
 
 var trigger;
 var processQueue;
 var flushQueue = function () {
-    while (fn = queue.shift()) {
-        fn();
-    }
+    do {
+        fn = queue.shift();
+        fn && fn();
+    } while (fn);
     dirty = false;
 };
 
