@@ -1,4 +1,7 @@
 import isPrimitive from '../utils/isPrimitive';
+import {
+    isClass
+} from '../utils/class';
 
 /**
  * Copy properties from `src` to `target` as unenumerable but configurable properties.
@@ -17,6 +20,10 @@ export function copyAugment(target, src) {
 }
 
 export function invokeInStoreBatch(name, callback) {
+    if (isClass(callback)) {
+        return callback;
+    }
+
     var fn = (new Function(name, `
         return function storeMappingBatch() {
             return ${name}.apply(this, arguments);
@@ -32,7 +39,6 @@ export function invokeInStoreBatch(name, callback) {
             method: name
         });
     });
-
     return createMappingFunction(fn);
 }
 

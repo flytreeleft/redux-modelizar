@@ -3,16 +3,16 @@ import isPrimitive from '../utils/isPrimitive';
 export const PROP_OBSERVER = '__ob__';
 
 function isObserved(obj) {
-    return !isPrimitive(obj) && !!obj[PROP_OBSERVER];
+    return !isPrimitive(obj) && obj.hasOwnProperty(PROP_OBSERVER);
 }
 
-export function notify(obj) {
+export function depNotify(obj) {
     if (isObserved(obj)) {
         obj[PROP_OBSERVER].dep.notify();
     }
 }
 
-export default function (obj) {
+export function observeCheck(obj) {
     if (!isObserved(obj)) {
         return;
     }
@@ -24,7 +24,7 @@ export default function (obj) {
         if (val instanceof Function
             || isPrimitive(val)
             || !Object.isExtensible(val)
-            || (val.hasOwnProperty(PROP_OBSERVER) && val[PROP_OBSERVER] instanceof Observer)
+            || isObserved(val)
             || val._isVue) {
             return;
         }

@@ -19,6 +19,8 @@ import {
 } from '../object/toReal';
 
 import isPrimitive from '../utils/isPrimitive';
+import isConfigurable from '../utils/isConfigurable';
+import isNullOrUndefined from '../utils/isNullOrUndefined';
 import guid, {GUID_SENTINEL} from '../utils/guid';
 
 import {
@@ -38,7 +40,10 @@ import {
 import {
     mutateState
 } from './actions';
-import observe, {notify} from './observe';
+import {
+    depNotify,
+    observeCheck
+} from './observe';
 
 /**
  *         <------------[reflect]-------------
@@ -48,8 +53,7 @@ import observe, {notify} from './observe';
 function Mapper(store, state, immutable, lazy) {
     this.store = store;
     this.state = state;
-    this.target = null;
-    this.connected = false;
+    this.connected = true;
     this.immutable = immutable !== false;
     this.lazy = lazy === true;
 
@@ -63,11 +67,13 @@ Mapper.prototype._freeze = function () {
     Object.defineProperties(this, {
         state: {
             configurable: false,
-            get: () => state
+            get: () => state,
+            set: (v) => v
         },
         store: {
             configurable: false,
-            get: () => store
+            get: () => store,
+            set: (v) => v
         },
         connected: {
             configurable: false,
@@ -77,12 +83,18 @@ Mapper.prototype._freeze = function () {
         },
         connect: {
             configurable: false,
-            value: (newState) => (state = newState)
+            value: (newState) => {
+                Mapper.prototype.connect.call(this, newState);
+                state = newState;
+            }
         }
     });
 };
 
 Mapper.prototype.connect = function (state) {
+    if (!this.state.is(state)) {
+        throw new Error('Trying to map another different state is not allowed.');
+    }
     this.state = state;
 };
 
@@ -96,7 +108,6 @@ Mapper.prototype.bind = function (obj) {
     }
     bindMapper(obj, this);
 
-    var store = this.store;
     var state = this.state;
     if (state.isArray()) {
         // TODO If the browser doesn't support Array.prototype.__proto__, we should transform the Observer in Vue.js
@@ -107,33 +118,14 @@ Mapper.prototype.bind = function (obj) {
     }
 
     this.update(obj);
-    // TODO When unsubscribe?
-    store.subscribe(() => {
-        if (!this.connected && !this.lazy) {
-            return;
-        }
-
-        var store = this.store;
-        var state = this.state;
-        var path = store.getState().path(state);
-        var newState = store.getState().get(path);
-
-        if (!newState.same(state)) {
-            this.lazy = false;
-            this.connect(newState);
-            this.update(obj);
-
-            notify(obj);
-        }
-    });
 };
 
 Mapper.prototype.subbind = function (obj, prop) {
-    var property = Object.getOwnPropertyDescriptor(obj, prop);
-    if (property && property.configurable === false) {
+    if (!isConfigurable(obj, prop)) {
         return;
     }
 
+    var property = Object.getOwnPropertyDescriptor(obj, prop);
     var getter = property && property.get;
     var setter = property && property.set;
     if (isMappingFunction(setter)) {
@@ -142,7 +134,8 @@ Mapper.prototype.subbind = function (obj, prop) {
 
     // A flag for avoiding to invoke setter recursively.
     var invokingSetter = false;
-    var propVal = mapStateToObj(this.store, this.state.get(prop), obj[prop], this.immutable);
+    var propVal = mapStateToObj(this.store, this.state.get(prop), obj[prop], this.immutable, false, prop);
+
     Object.defineProperty(obj, prop, {
         enumerable: true,
         configurable: true,
@@ -158,7 +151,7 @@ Mapper.prototype.subbind = function (obj, prop) {
                 var mappedSubState = getMappedState(propVal);
 
                 if (!subState.same(mappedSubState)) {
-                    propVal = mapStateToObj(store, subState, propVal, this.immutable);
+                    propVal = mapStateToObj(store, subState, propVal, this.immutable, false, prop);
                 }
             }
             // NOTE: Do not accept the value from the original getter,
@@ -179,8 +172,10 @@ Mapper.prototype.subbind = function (obj, prop) {
             // just return.
             if (this.immutable && !store.isBatching()) {
                 // TODO More details and tips
-                // TODO 开发阶段抛出异常，发布阶段warning log。redux-modelizar提供全局的配置
-                throw new Error('Immutable state');
+                // TODO 开发阶段抛出异常，发布阶段log warning。redux-modelizar提供全局的配置
+                throw new Error('Immutable state mapping,'
+                                + ' object property assignment is not allowed,'
+                                + ' please do this in it\'s prototype methods.');
             }
 
             propVal = newVal;
@@ -208,7 +203,7 @@ Mapper.prototype.subbind = function (obj, prop) {
                     // NOTE: Mutation can be lazy, the property state maybe hasn't mutated,
                     // so create a mapper to accept the following mutations.
                     if (store.isBatching()) {
-                        propVal = mapStateToObj(store, subState, propVal, this.immutable, true);
+                        propVal = mapStateToObj(store, subState, propVal, this.immutable, true, prop);
                     }
                 }
                 setter && setter.call(obj, propVal);
@@ -216,6 +211,29 @@ Mapper.prototype.subbind = function (obj, prop) {
                 invokingSetter = false;
             }
         })
+    });
+};
+
+Mapper.prototype.observe = function (obj) {
+    var store = this.store;
+    var unsubscribe = store.subscribe(() => {
+        if (!this.connected) {
+            !this.lazy && unsubscribe();
+            return;
+        }
+        this.lazy = false;
+
+        var store = this.store;
+        var state = this.state;
+        var path = store.getState().path(state);
+        var newState = store.getState().get(path);
+        // State has been mutated, update the mapping object.
+        if (!newState.same(state)) {
+            this.connect(newState);
+            this.update(obj);
+
+            depNotify(obj);
+        }
     });
 };
 
@@ -227,15 +245,12 @@ Mapper.prototype.update = function (obj) {
     });
 
     // Record global unique id.
-    var property = Object.getOwnPropertyDescriptor(obj, GUID_SENTINEL);
-    if (!property || property.configurable !== false) {
+    if (isConfigurable(obj, GUID_SENTINEL)) {
         Object.defineProperty(obj, GUID_SENTINEL, {
             enumerable: false,
             configurable: false,
             get: () => guid(this.state.valueOf()),
-            set: () => {
-                // NOTE: guid is always determined by state.
-            }
+            set: (v) => v
         });
     }
     // delete obj[IS_DATE_SENTINEL];
@@ -248,22 +263,18 @@ Mapper.prototype.update = function (obj) {
         }
     } else {
         xor(stateKeys, objKeys).forEach((key) => {
-            // delete obj[key];
+            if (isConfigurable(obj, key)) {
+                delete obj[key];
+            }
         });
     }
-    // Wrap all methods defined in obj.
-    objKeys.forEach((key) => {
-        if (obj[key] instanceof Function && !isMappingFunction(obj[key])) {
-            obj[key] = invokeInStoreBatch(`this$${key}`, obj[key]);
-        }
-    });
 
     // Observing check for Vue.js
-    observe(obj);
+    observeCheck(obj);
 };
 
 const cache = new Map();
-function mapStateToObj(store, state, obj, immutable, lazy) {
+function mapStateToObj(store, state, obj, immutable, lazy, prop) {
     var val = state.valueOf();
     var id = guid(val);
 
@@ -273,16 +284,22 @@ function mapStateToObj(store, state, obj, immutable, lazy) {
         id = parseRefKey(val);
         return cache.get(id);
     } else if (isFunctionObj(val)) {
-        return parseFunction(val);
+        var fn = parseFunction(val);
+        if (!isNullOrUndefined(prop) && !isMappingFunction(fn)) {
+            fn = invokeInStoreBatch(`this$${prop}`, fn);
+        }
+        return fn;
     } else if (isRegExpObj(val)) {
         return parseRegExp(val);
     } else if (isDateObj(val)) {
+        // TODO Create a readonly date
         return parseDate(val);
     }
 
     if (isPrimitive(obj)
         || (isArray(val) && !isArray(obj))
-        || (!isArray(val) && isArray(obj))) {
+        || (!isArray(val) && isArray(obj))
+        || (isBoundState(obj) && id !== guid(obj))) {
         obj = createRealObj(val);
     }
     id && cache.set(id, obj);
@@ -292,9 +309,8 @@ function mapStateToObj(store, state, obj, immutable, lazy) {
         mapper = new Mapper(store, state, immutable, lazy);
         mapper.bind(obj);
     }
-    if (!mapper.state.same(state)) {
-        mapper.connect(state);
-        mapper.update(obj);
+    if (mapper.connected || mapper.lazy) {
+        mapper.observe(obj);
     }
 
     return obj;
