@@ -50,7 +50,7 @@ function nodePath(root, pathLink, idOrNode) {
     node = isUnreachableNode(node) ? null : node;
 
     // TODO 要确保pathLink.path的准确性，需解决PathLink在从下到上合并过程中未将砍掉的分支合并到目标tree的问题
-    return guid(node) === guid(idOrNode) ? paths : undefined;
+    return guid(node) === guid(idOrNode) ? paths : null;
 }
 
 /**
@@ -191,6 +191,10 @@ export default function createState(initialState, pathLink = null, inited = fals
         }
     };
     var extractPath = (state, path) => {
+        if (path === null) {
+            return null;
+        }
+
         if (isArray(path)) {
             if (path.length === 0) {
                 return path;
@@ -326,9 +330,10 @@ export default function createState(initialState, pathLink = null, inited = fals
          * state.get(3); // => createState(undefined)
          * state.get([1, b, d]); // => createState(undefined)
          * state.get('[1].b.d'); // => createState(undefined)
+         * state.get(null); // => createState(undefined)
          * ```
          *
-         * @param {String/Array} [path]
+         * @param {String/Array/null} [path]
          *          e.g. `['a', 'b', 0]`, `'a.b[0]'`, `[1][2][0].c`.
          * @return {State}
          */

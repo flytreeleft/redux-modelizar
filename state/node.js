@@ -1,4 +1,5 @@
 import isArray from 'lodash/isArray';
+import isEqual from 'lodash/isEqual';
 
 import {
     GUID_SENTINEL,
@@ -34,29 +35,37 @@ export function cloneNode(node) {
  * @param {String/Number/Symbol} [path] The reference property name of `topNode`.
  */
 export function initNode(node, pathLink, topNode = null, path = null) {
-    var isRefTopNode = (node) => {
+    var goTop = (paths) => paths.slice(0, paths.length - 1);
+    var isRefTopNode = (node, mountPaths) => {
         // Check from the mount point `topNode`
-        return topNode && !isPrimitive(node) && !!pathLink.path(topNode, node);
+        var checkPaths = topNode && !isPrimitive(node) && pathLink.path(node, topNode);
+        if (checkPaths) {
+            return checkPaths.length !== mountPaths.length
+                   || !isEqual(goTop(checkPaths), goTop(mountPaths));
+        }
+        return false;
     };
 
     // var tag = 'Initial node - toPlain';
     // console.profile(tag);
     // console.time(tag);
+    var topPath = path;
     var newNode = toPlain(node, {
-        pre: (node, topNode, path) => {
+        pre: (dst, dstTop, path, src, paths) => {
             // Check if the sub node tree
             // contains top node references or not.
-            if (!isRefObj(node) && isRefTopNode(node)) {
-                node = createRefObj(guid(node));
+            var mountPaths = topPath === null ? paths : [topPath].concat(paths);
+            if (!isRefObj(dst) && isRefTopNode(src, mountPaths)) {
+                dst = createRefObj(guid(src));
             }
-            pathLink.add(node, topNode, path);
-            return node;
+            pathLink.add(dst, dstTop, path);
+            return dst;
         },
-        post: (node) => Object.freeze(node)
+        post: (dst) => Object.freeze(dst)
     });
     // console.timeEnd(tag);
     // console.profileEnd();
-    pathLink.add(newNode, topNode, path);
+    pathLink.add(newNode, topNode, topPath);
 
     return newNode;
 }

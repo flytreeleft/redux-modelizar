@@ -88,7 +88,7 @@ PathLink.prototype.has = function (nodeOrId) {
 
 /**
  * @return {Array/null} The path from root to the specified node.
- *          If node doesn't exist, return `undefined`.
+ *          If node doesn't exist, return `null`.
  */
 PathLink.prototype.path = function (start, end = this._root) {
     var lnk = this.get(start);
@@ -101,7 +101,7 @@ PathLink.prototype.path = function (start, end = this._root) {
     while (lnk && lnk !== endLnk) {
         var path = lnk.path;
         // If it's a broken path or can not reach to current root,
-        // return `undefined`.
+        // return `null`.
         if (isNullOrUndefined(path)) {
             return null;
         }

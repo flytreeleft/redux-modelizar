@@ -7,6 +7,7 @@ import isPrimitive from '../utils/isPrimitive';
 import {
     OBJECT_CLASS_SENTINEL,
     isRefObj,
+    parseRefKey,
     createRefObj,
     createFunctionObj,
     createDateObj,
@@ -38,14 +39,12 @@ function createDstObj(source) {
 
 const emptyProcessor = (obj) => obj;
 /**
- * NOTE: 仅处理自上而下存在的循环引用
- *
  * @param {*} source The source which will be converted to a plain object.
- * @param {Function/Object} [processor=(dst,&nbsp;topDst,&nbsp;topDstProp,&nbsp;src)=>dst]
+ * @param {Function/Object} [processor=(dst,&nbsp;dstTop,&nbsp;dstTopProp,&nbsp;src,&nbsp;paths)=>dst]
  *          A pre processor for processing the plain object
  *          before assigning other properties.
  *          Or an object which contains pre and post processor.
- * @param {Function} [processor.pre=(dst,&nbsp;topDst,&nbsp;topDstProp,&nbsp;src)=>dst]
+ * @param {Function} [processor.pre=(dst,&nbsp;dstTop,&nbsp;dstTopProp,&nbsp;src,&nbsp;paths)=>dst]
  *          The pre processor.
  * @param {Function} [processor.post=(dst)=>dst] The post processor
  */
@@ -63,31 +62,39 @@ export default function toPlain(source, processor = emptyProcessor) {
     var root;
     // {[sourceObject]: guid(sourceObjectCopy)}
     var refs = new Map();
-    // [[topDstRefObjCount, topDst, topDstProp, src]]
-    var stack = [-1, undefined, undefined, source];
+    // [[topDstRefObjCount, topDst, topDstProp, pathFromRoot, src]]
+    var stack = [-1, undefined, undefined, [], source];
     var src;
     var dst; // Target object for receiving source properties.
     var topDst; // Top object of target object.
     var topDstProp; // Property of top object.
+    var pathFromRoot; // Node path from the source root.
     var topDstRefObjCount; // How many objects are referred by top object?
     var excludeKeys = [OBJECT_CLASS_SENTINEL];
     while (stack.length > 0) {
         src = valueOf(stack.pop());
+        pathFromRoot = stack.pop();
         topDstProp = stack.pop();
         topDst = stack.pop();
         topDstRefObjCount = stack.pop();
 
-        if ([null, undefined].indexOf(refs.get(src)) < 0) {
-            throw new Error('Cycle reference detected:'
-                            + ` ${topDst[OBJECT_CLASS_SENTINEL]}.${topDstProp} = ${src}`);
+        var copyId = refs.get(src);
+        if (copyId) {
+            dst = createRefObj(copyId);
+        } else {
+            src = processSrcObj(src);
+            dst = createDstObj(src);
+            // Pre-processor
+            dst = processor.pre(dst, topDst, topDstProp, src, pathFromRoot);
         }
 
-        src = processSrcObj(src);
-        dst = createDstObj(src);
-        // Pre-processor
-        dst = processor.pre(dst, topDst, topDstProp, src);
-        refs.set(src, guid(dst));
         // Pre-processor may return a primitive value.
+        if (isRefObj(dst)) {
+            refs.set(src, parseRefKey(dst));
+        } else if (!isPrimitive(dst)) {
+            refs.set(src, guid(dst));
+        }
+
         if (!isRefObj(dst) && !isPrimitive(dst)) {
             var refObjCount = 0;
             Object.keys(src).forEach((key) => {
@@ -105,7 +112,7 @@ export default function toPlain(source, processor = emptyProcessor) {
                 if (valueId) {
                     value = createRefObj(valueId);
                 }
-                stack.push(refObjCount++, dst, key, value);
+                stack.push(refObjCount++, dst, key, pathFromRoot.concat(key), value);
             });
             // Post-processor for leaf node
             if (refObjCount === 0) {
