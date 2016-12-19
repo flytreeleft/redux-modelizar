@@ -8,6 +8,7 @@ import {
     REDUX_MODELIZAR_NAMESPACE
 } from './namespace';
 import forEach from './utils/forEach';
+import guid from './utils/guid';
 import {
     createState,
     isState
@@ -17,7 +18,7 @@ import {
 } from './mapper/reducer';
 import mapState from './mapper/mapState';
 
-export const REDUX_MODELIZAR_BATCH = REDUX_MODELIZAR_NAMESPACE + '/BATCH';
+export const REDUX_MODELIZAR_MUTATION_BATCH = REDUX_MODELIZAR_NAMESPACE + '/MUTATION_BATCH';
 
 function modelizar(reducer) {
     return function mutation(state, action = {}) {
@@ -26,7 +27,7 @@ function modelizar(reducer) {
         }
 
         switch (action.type) {
-            case REDUX_MODELIZAR_BATCH:
+            case REDUX_MODELIZAR_MUTATION_BATCH:
                 action.actions.forEach((action) => {
                     state = mutation(state, action);
                 });
@@ -53,7 +54,7 @@ export default function (reducer, preloadedState, enhancer) {
 
     function doBatch(meta) {
         var action = {
-            type: REDUX_MODELIZAR_BATCH,
+            type: REDUX_MODELIZAR_MUTATION_BATCH,
             meta,
             actions: [].concat(actions)
         };
@@ -66,6 +67,23 @@ export default function (reducer, preloadedState, enhancer) {
         }
     }
 
+    const mutationListeners = {};
+    subscribe(() => {
+        forEach(mutationListeners, (mutationListener) => {
+            var state = mutationListener.state;
+            var listeners = mutationListener.listeners.slice();
+            var path = getState().path(state);
+            var newState = getState().get(path);
+
+            if (path && !newState.same(state)) {
+                mutationListener.state = newState;
+                forEach(listeners, (listener) => {
+                    listener(newState, state);
+                });
+            }
+        });
+    });
+
     return {
         ...store,
         dispatch: (action) => {
@@ -75,6 +93,28 @@ export default function (reducer, preloadedState, enhancer) {
             } else {
                 return dispatch(action);
             }
+        },
+        subscribe: (state, listener) => {
+            if (state instanceof Function) {
+                listener = state;
+                state = getState();
+            }
+            // NOTE: This way will be faster than subscribing listener for every state.
+            var stateId = guid(state.valueOf());
+            if (!mutationListeners[stateId]) {
+                mutationListeners[stateId] = {
+                    state: state,
+                    listeners: [listener]
+                };
+            } else {
+                mutationListeners[stateId].listeners.push(listener);
+            }
+
+            return () => {
+                var listeners = mutationListeners[stateId].listeners;
+                var index = listeners.indexOf(listener);
+                index >= 0 && listeners.splice(index, 1);
+            };
         },
         /**
          * @param {Object} [state] If no specified, map the root state.
