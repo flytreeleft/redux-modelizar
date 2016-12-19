@@ -43,7 +43,7 @@ const arrayMethods = Object.create(arrayProto);
                         var val = this[i];
                         // Trigger batching addition mutation
                         this[i] = null;
-                        mapper.subbind(this, i);
+                        mapper.mapping(this, i);
                         this[i] = val;
                     }
                 }
@@ -51,12 +51,31 @@ const arrayMethods = Object.create(arrayProto);
                 method: `Array$${method}`
             });
 
+            var ob = this.__ob__;
+            if (ob) {
+                var inserted;
+                switch (method) {
+                    case 'push':
+                    case 'unshift':
+                        inserted = args;
+                        break;
+                    case 'splice':
+                        inserted = args.slice(2);
+                        break;
+                }
+                if (inserted) {
+                    ob.observeArray(inserted);
+                }
+                ob.dep.notify();
+            }
+
             return result;
         }
     });
 });
 
 export function overwriteArray(array) {
+    // TODO 改造Vue.js让其支持定义在array对象上的Array方法调用
     return copyAugment(array, arrayMethods);
 }
 

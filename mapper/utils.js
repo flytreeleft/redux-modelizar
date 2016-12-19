@@ -1,7 +1,10 @@
+import isArray from 'lodash/isArray';
+
 import isPrimitive from '../utils/isPrimitive';
 import {
     isClass
 } from '../utils/class';
+import guid, {GUID_SENTINEL} from '../utils/guid';
 
 /**
  * Copy properties from `src` to `target` as unenumerable but configurable properties.
@@ -69,12 +72,18 @@ export function getBoundMapper(obj) {
 }
 
 export function bindMapper(obj, mapper) {
-    Object.defineProperties(obj, {
-        [PROP_STATE_MAPPER]: {
-            enumerable: false,
-            configurable: false,
-            value: mapper
-        }
+    Object.defineProperty(obj, PROP_STATE_MAPPER, {
+        enumerable: false,
+        configurable: false,
+        value: mapper
+    });
+
+    // Record global unique id.
+    Object.defineProperty(obj, GUID_SENTINEL, {
+        enumerable: false,
+        configurable: false,
+        get: () => guid(mapper.state.valueOf()),
+        set: (v) => v
     });
 }
 
@@ -86,4 +95,20 @@ export function createMappingFunction(callback) {
 
 export function isMappingFunction(callback) {
     return callback instanceof Function && !!callback[PROP_MAPPING_FUNCTION];
+}
+
+export function shallowEqual(obj, other) {
+    if (isArray(obj) && isArray(other)) {
+        if (obj.length === other.length) {
+            for (var i = 0, len = obj.length; i < len; i++) {
+                if (obj[i] !== other[i]) {
+                    return false;
+                }
+            }
+            return true;
+        } else {
+            return false;
+        }
+    }
+    return obj === other;
 }

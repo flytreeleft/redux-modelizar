@@ -8,11 +8,11 @@ export function mapper(reducer) {
         var path;
         switch (action.type) {
             case MUTATE_STATE:
-                path = state.path(action.state).concat(action.key);
-                return state.set(path, action.value);
+                path = state.path(action.state);
+                return path ? state.set([...path, action.key], action.value) : state;
             case REMOVE_SUB_STATE:
-                path = state.path(action.state).concat(action.key);
-                return state.remove(path);
+                path = state.path(action.state);
+                return path ? state.remove([...path, action.key]) : state;
             default:
                 return reducer(state, action);
         }
