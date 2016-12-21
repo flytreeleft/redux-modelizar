@@ -40,6 +40,7 @@ export function initNode(node, pathLink, topNode = null, path = null) {
         // Check from the mount point `topNode`
         var checkPaths = topNode && !isPrimitive(node) && pathLink.path(node, topNode);
         if (checkPaths) {
+            // NOTE: Sibling object reference will be ignored.
             return checkPaths.length !== mountPaths.length
                    || !isEqual(goTop(checkPaths), goTop(mountPaths));
         }

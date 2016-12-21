@@ -372,12 +372,13 @@ export default function createState(initialState, pathLink = null, inited = fals
             }
 
             return doChange(this, (root, pathLink) => {
+                // TODO 不同的Path link在合并时会出现干扰，故需寻找更稳定的方法以提高大数据的更新速度
                 // `update` will be faster than `set` when value is a big data.
-                if (isState(valueOrState)) {
-                    return updateNode(root, pathLink, paths, () => valueOrState, null, true);
-                } else {
-                    return setNode(root, pathLink, paths, valueOrState);
-                }
+                // if (isState(valueOrState)) {
+                //     return updateNode(root, pathLink, paths, () => valueOrState, null, true);
+                // } else {
+                return setNode(root, pathLink, paths, valueOf(valueOrState));
+                // }
             });
         },
         /**
