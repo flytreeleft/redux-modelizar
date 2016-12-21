@@ -9,6 +9,7 @@ import {
 } from './namespace';
 import forEach from './utils/forEach';
 import guid from './utils/guid';
+import isPrimitive from './utils/isPrimitive';
 import {
     createState,
     isState
@@ -67,16 +68,44 @@ export default function (reducer, preloadedState, enhancer) {
         }
     }
 
+    const mappingCache = {};
+    const cache = {
+        put: (obj) => {
+            if (!isPrimitive(obj)) {
+                mappingCache[guid(obj)] = obj;
+            }
+        },
+        remove: (obj) => {
+            if (!isPrimitive(obj)) {
+                delete mappingCache[guid(obj)];
+            }
+        },
+        get: (id) => {
+            return mappingCache[id];
+        }
+    };
+
     const mutationListeners = {};
     subscribe(() => {
-        forEach(mutationListeners, (mutationListener) => {
-            var state = mutationListener.state;
-            var listeners = mutationListener.listeners.slice();
-            var path = getState().path(state);
+        Object.keys(mutationListeners).map((stateId) => {
+            var mutationListener = mutationListeners[stateId];
+            return {
+                id: stateId,
+                state: mutationListener.state,
+                path: getState().path(stateId),
+                listeners: mutationListener.listeners.slice()
+            };
+        }).sort((a, b) => {
+            // Descending order for triggering listeners from bottom to top.
+            return (b.path || []).length - (a.path || []).length;
+        }).forEach(({id, state, path, listeners}) => {
             var newState = getState().get(path);
 
-            if (path && !newState.same(state)) {
-                mutationListener.state = newState;
+            if (!path) {
+                delete mutationListeners[id];
+            }
+            else if (!newState.same(state)) {
+                mutationListeners[id].state = newState;
                 forEach(listeners, (listener) => {
                     listener(newState, state);
                 });
@@ -127,7 +156,7 @@ export default function (reducer, preloadedState, enhancer) {
                 state = undefined;
             }
 
-            return mapState({...this}, state, immutable);
+            return mapState({...this, cache}, state, immutable);
         },
         /**
          * @param {Object} target
@@ -150,7 +179,7 @@ export default function (reducer, preloadedState, enhancer) {
                     }
 
                     if (current) {
-                        target[prop] = mapState({...this}, current, target[prop], immutable);
+                        target[prop] = mapState({...this, cache}, current, target[prop], immutable);
                     } else {
                         target[prop] = current;
                     }
