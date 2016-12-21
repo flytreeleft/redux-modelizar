@@ -2,7 +2,6 @@ import isBoolean from 'lodash/isBoolean';
 import isArray from 'lodash/isArray';
 
 import {
-    // IS_DATE_SENTINEL,
     createRefObj,
     isRefObj,
     isFunctionObj,
@@ -21,12 +20,11 @@ import isPrimitive from '../utils/isPrimitive';
 import isConfigurable from '../utils/isConfigurable';
 import isNullOrUndefined from '../utils/isNullOrUndefined';
 import guid from '../utils/guid';
+import forEach from '../utils/forEach';
 
 import {
     invokeInStoreBatch,
-    isMappingState,
     isBoundState,
-    getMappedState,
     getBoundMapper,
     bindMapper,
     createMappingFunction,
@@ -107,21 +105,21 @@ Mapper.prototype.bind = function (obj) {
     }
     bindMapper(obj, this);
 
+    this.store.cache.put(obj);
     if (isArray(obj)) {
         // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/proto
         overwriteArray(obj);
     } else {
         overwriteObject(obj);
     }
-    this.cache(obj);
 
     var state = this.state;
     state.keys().forEach((key) => {
-        this.mapping(obj, key);
+        this.mapping(state, obj, key);
     });
 };
 
-Mapper.prototype.mapping = function (obj, prop) {
+Mapper.prototype.mapping = function (state, obj, prop) {
     if (!isConfigurable(obj, prop)) {
         return;
     }
@@ -134,28 +132,33 @@ Mapper.prototype.mapping = function (obj, prop) {
     }
 
     var invokingSetter = false;
-    var propVal = mapStateToObj(this.store, this.state.get(prop), obj[prop], this.immutable, false, prop);
+    var propVal = mapStateToObj(this.store, state.get(prop), obj[prop], this.immutable, this.lazy, prop);
+
     Object.defineProperty(obj, prop, {
         enumerable: true,
         configurable: true,
         get: createMappingFunction(() => {
-            var store = this.store;
-            if (this.connected && !store.isBatching()) {
-                var state = this.state;
-                var subState = state.get(prop);
-                var mappedSubState = getMappedState(propVal);
-
-                if (!subState.same(mappedSubState)) {
-                    propVal = mapStateToObj(store, subState, propVal, this.immutable, false, prop);
-                }
-            }
             // NOTE: Do not accept the value from the original getter,
             // just call it for some reason like observing dependencies collection.
             getter && getter.call(obj);
 
-            return propVal;
+            if (!this.updating) {
+                return propVal;
+            }
+
+            // Return the old mapping value when updating mapping.
+            var store = this.store;
+            var subState = this.state.get(prop);
+            if (subState.isObject()) {
+                var id = guid(subState);
+                return store.cache.get(id);
+            } else {
+                return subState.valueOf();
+            }
         }),
         set: createMappingFunction((newVal) => {
+            // NOTE: If just the original array reference changed but no changes on it's elements,
+            // do not dispatch to avoid causing empty mutation history.
             if (invokingSetter
                 || shallowEqual(newVal, propVal)) {
                 // NOTE: If they are equal arrays (reference is changed but all elements are equal),
@@ -164,39 +167,41 @@ Mapper.prototype.mapping = function (obj, prop) {
                 return;
             }
 
-            var store = this.store;
-            var state = this.state;
             // When current obj is immutable
             // and store doesn't process batching mutations,
             // just return.
-            if (this.immutable && !store.isBatching()) {
+            if (!this.updating && this.immutable && !this.store.isBatching()) {
                 // TODO 开发阶段抛出异常，发布阶段log warning。redux-modelizar提供全局的配置
-                throw new Error('Immutable state mapping,'
+                throw new Error('Immutable state mapping:'
                                 + ' object property assignment is not allowed,'
                                 + ' please do this in it\'s prototype methods.');
             }
 
             propVal = newVal;
             // A nomadic mapper should not do any mutations.
-            if (!this.connected && !this.lazy) {
+            if (this.updating || (!this.connected && !this.lazy)) {
+                setter && setter.call(obj, propVal);
                 return;
             }
 
             invokingSetter = true;
             // TODO 被循环引用的对象先被引用再被初始引用方解除引用后其去留问题？
+            var store = this.store;
+            var state = this.state;
             var subState;
             try {
-                if (isMappingState(propVal)) {
+                var mapper = getBoundMapper(propVal);
+                if (mapper && (mapper.connected || mapper.lazy)) {
                     // NOTE: The mapper of new value maybe is lazy,
                     // it hasn't been mounted on root state,
                     // so it's reference should be set manually.
-                    subState = getMappedState(propVal);
+                    subState = mapper.state;
 
                     var id = guid(subState.valueOf());
                     store.dispatch(mutateState(state, prop, createRefObj(id)));
                 } else {
                     // NOTE: If the mapper of new value is disconnected from it's state,
-                    // it's state should be recreated.
+                    // it's state should be recreated for processing cross reference correctly.
                     var path = store.getState().path(state).concat(prop);
                     subState = store.getState().set(path, propVal).get(path);
 
@@ -217,74 +222,109 @@ Mapper.prototype.mapping = function (obj, prop) {
     });
 };
 
-const cache = new Map();
-Mapper.prototype.cache = function (obj) {
-    cache.set(guid(obj), obj);
-};
-
-Mapper.prototype.discache = function (obj) {
-    cache.delete(guid(obj));
-};
-
 Mapper.prototype.observe = function (obj) {
-    var store = this.store;
-    var state = this.state;
-
-    var unsubscribe = store.subscribe(state, (newState) => {
-        if (!this.connected) {
-            unsubscribe();
-        } else {
-            this.lazy = false;
-            this.connect(newState);
-            this.update(obj);
-        }
-    });
-};
-
-Mapper.prototype.update = function (obj) {
-    var state = this.state;
-    if (state.isArray()) {
-        var size = state.size();
-
-        if (obj.length > size) {
-            Array.prototype.splice.call(obj, size, obj.length - size);
-        }
+    if (this.unsubscribe) {
+        return;
     }
 
-    var objKeys = Object.keys(obj);
-    var stateKeys = state.keys();
-    // Remove redundant properties.
-    objKeys.filter((key) => stateKeys.indexOf(key) < 0).forEach((key) => {
-        if (isConfigurable(obj, key)) {
-            delete obj[key];
+    var store = this.store;
+    var state = this.state;
+    this.unsubscribe = store.subscribe(state, (newState) => {
+        this.lazy = false;
+        if (!this.connected) {
+            this.unsubscribe();
+            this.unsubscribe = null;
+            store.cache.remove(obj);
+        } else {
+            this.update(newState, obj);
         }
-    });
-    // delete obj[IS_DATE_SENTINEL];
-
-    // Bind new properties to `obj`
-    stateKeys.filter((key) => objKeys.indexOf(key) < 0).forEach((key) => {
-        this.mapping(obj, key);
     });
 };
 
-function mapStateToObj(store, state, obj, immutable, lazy, prop) {
+var toMap = (result, key) => (result[key] = true) && result;
+Mapper.prototype.update = function (newState, obj) {
+    var store = this.store;
+    var oldState = this.state;
+
+    var oldStateKeys = Object.keys(obj).reduce(toMap, {});
+    var newStateKeys = newState.keys().reduce(toMap, {});
+    if (newState.isArray()) {
+        var newSize = newState.size();
+
+        if (obj.length > newSize) {
+            Array.prototype.splice.call(obj, newSize, obj.length - newSize);
+        } else if (obj.length < newSize) {
+            for (var i = obj.length; i < newSize; i++) {
+                this.mapping(oldState, obj, i);
+            }
+        }
+    } else {
+        // Remove redundant properties.
+        forEach(oldStateKeys, (existing, key) => {
+            if (!newStateKeys[key] && isConfigurable(obj, key)) {
+                delete obj[key];
+            }
+        });
+        // Bind new properties to `obj`
+        forEach(newStateKeys, (existing, key) => {
+            if (!oldStateKeys[key]) {
+                this.mapping(oldState, obj, key);
+            }
+        });
+    }
+
+    try {
+        this.updating = true;
+        forEach(newStateKeys, (existing, key) => {
+            if (!newState.get(key).same(oldState.get(key))) {
+                obj[key] = mapStateToObj(store, newState.get(key), obj[key], this.immutable, this.lazy, key);
+            }
+        });
+    } finally {
+        this.updating = false;
+        this.connect(newState);
+    }
+};
+
+function fillElements(state, obj, oldObj) {
+    if (isArray(obj) && isArray(oldObj)) {
+        var elements = oldObj.reduce((result, val) => {
+            if (!isPrimitive(val)) {
+                result[guid(val)] = val;
+            }
+            return result;
+        }, {});
+
+        state.valueOf().forEach((val, i) => {
+            if (!isPrimitive(val)) {
+                obj[i] = elements[guid(val)];
+            }
+        });
+    }
+}
+
+function mapStateToObj(store, state, obj, immutable, lazy, topProp) {
     var val = state.valueOf();
     var id = guid(val);
 
     if (isPrimitive(val)) {
         return val;
-    } else if (isRefObj(val)) {
+    }
+    else if (isRefObj(val)) {
         id = parseRefKey(val);
-        return cache.get(id);
-    } else if (isFunctionObj(val)) {
+        return store.cache.get(id);
+    }
+    else if (isFunctionObj(val)) {
         var fn = parseFunction(val);
-        if (!isNullOrUndefined(prop) && !isMappingFunction(fn)) {
-            fn = invokeInStoreBatch(`this$${prop}`, fn);
+        if (!isNullOrUndefined(topProp) && !isMappingFunction(fn)) {
+            fn = invokeInStoreBatch(`this$${topProp}`, fn);
         }
         return fn;
-    } else if (isRegExpObj(val)) {
+    }
+    else if (isRegExpObj(val)) {
         return parseRegExp(val);
-    } else if (isDateObj(val)) {
+    }
+    else if (isDateObj(val)) {
         // TODO Create a readonly date
         return parseDate(val);
     }
@@ -293,7 +333,11 @@ function mapStateToObj(store, state, obj, immutable, lazy, prop) {
         || (isArray(val) && !isArray(obj))
         || (!isArray(val) && isArray(obj))
         || (isBoundState(obj) && id !== guid(obj))) {
+        var oldObj = obj;
         obj = createRealObj(val);
+
+        // Save the original elements for reuse when mapping state.
+        fillElements(state, obj, oldObj);
     }
 
     var mapper = getBoundMapper(obj);
@@ -301,14 +345,10 @@ function mapStateToObj(store, state, obj, immutable, lazy, prop) {
         mapper = new Mapper(store, state, immutable, lazy);
         mapper.bind(obj);
     } else {
-        mapper.connect(state);
-        mapper.update(obj);
-        mapper.cache(obj);
+        store.cache.put(obj);
+        mapper.update(state, obj);
     }
-
-    if (mapper.connected || mapper.lazy) {
-        mapper.observe(obj);
-    }
+    mapper.observe(obj);
 
     return obj;
 }

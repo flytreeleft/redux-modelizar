@@ -27,11 +27,7 @@ export function invokeInStoreBatch(name, callback) {
         return callback;
     }
 
-    var fn = (new Function(name, `
-        return function storeMappingBatch() {
-            return ${name}.apply(this, arguments);
-        };
-    `))(function () {
+    return createMappingFunction(function storeMappingBatch() {
         var mapper = getBoundMapper(this);
         var store = mapper.store;
         var args = [...arguments];
@@ -42,7 +38,6 @@ export function invokeInStoreBatch(name, callback) {
             method: name
         });
     });
-    return createMappingFunction(fn);
 }
 
 const PROP_STATE_MAPPER = '__[STORE_STATE_MAPPER]__';
