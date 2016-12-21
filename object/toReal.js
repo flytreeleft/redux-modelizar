@@ -24,7 +24,11 @@ export function createRealObj(source) {
                         + 'Please make sure this object is converted by #toPlain(obj).');
     }
 
-    return instance(ctor);
+    if (Array.isArray(source)) {
+        return new Array(source.length);
+    } else {
+        return instance(ctor);
+    }
 }
 
 const emptyProcessor = (obj) => obj;
