@@ -37,8 +37,8 @@ export function cloneNode(node) {
 export function initNode(node, pathLink, topNode = null, path = null) {
     var goTop = (paths) => paths.slice(0, paths.length - 1);
     var isRefTopNode = (node, mountPaths) => {
-        // Check from the mount point `topNode`
-        var checkPaths = topNode && !isPrimitive(node) && pathLink.path(node, topNode);
+        // Check from the root node
+        var checkPaths = !isPrimitive(node) && pathLink.path(node);
         if (checkPaths) {
             // NOTE: Sibling object reference will be ignored.
             return checkPaths.length !== mountPaths.length
@@ -50,12 +50,12 @@ export function initNode(node, pathLink, topNode = null, path = null) {
     // var tag = 'Initial node - toPlain';
     // console.profile(tag);
     // console.time(tag);
-    var topPath = path;
+    var topPaths = (pathLink.path(topNode) || []).concat(path || []);
     var newNode = toPlain(node, {
         pre: (dst, dstTop, path, src, paths) => {
             // Check if the sub node tree
             // contains top node references or not.
-            var mountPaths = topPath === null ? paths : [topPath].concat(paths);
+            var mountPaths = topPaths.concat(paths);
             if (!isRefObj(dst) && isRefTopNode(src, mountPaths)) {
                 dst = createRefObj(guid(src));
             }
@@ -66,7 +66,7 @@ export function initNode(node, pathLink, topNode = null, path = null) {
     });
     // console.timeEnd(tag);
     // console.profileEnd();
-    pathLink.add(newNode, topNode, topPath);
+    pathLink.add(newNode, topNode, path);
 
     return newNode;
 }
