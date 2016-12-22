@@ -82,6 +82,9 @@ export default function (reducer, preloadedState, enhancer) {
         },
         get: (id) => {
             return mappingCache[id];
+        },
+        has: (id) => {
+            return id in mappingCache;
         }
     };
 
@@ -97,18 +100,21 @@ export default function (reducer, preloadedState, enhancer) {
             };
         }).sort((a, b) => {
             // Descending order for triggering listeners from bottom to top.
-            return (b.path || []).length - (a.path || []).length;
+            return a.path === null || b.path === null
+                ? 1
+                : b.path.length - a.path.length;
         }).forEach(({id, state, path, listeners}) => {
             var newState = getState().get(path);
 
-            if (!path) {
-                delete mutationListeners[id];
-            }
-            else if (!newState.same(state)) {
+            if (!newState.same(state)) {
                 mutationListeners[id].state = newState;
                 forEach(listeners, (listener) => {
                     listener(newState, state);
                 });
+            }
+            // Remove all listeners if state doesn't exist already.
+            if (!path) {
+                delete mutationListeners[id];
             }
         });
     });
