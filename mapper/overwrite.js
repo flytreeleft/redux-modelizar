@@ -9,7 +9,8 @@ import {
     isMappingFunction
 } from './utils';
 import {
-    removeSubState
+    removeSubState,
+    mutateState
 } from './actions';
 
 const arrayProto = Array.prototype;
@@ -40,11 +41,7 @@ const arrayMethods = Object.create(arrayProto);
                 // Map new elements
                 else if (this.length > origSize) {
                     for (let i = origSize; i < this.length; i++) {
-                        var val = this[i];
-                        // Trigger batching addition mutation
-                        this[i] = null;
-                        mapper.mapping(this, i);
-                        this[i] = val;
+                        store.dispatch(mutateState(state, i, this[i]));
                     }
                 }
             }, {

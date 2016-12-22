@@ -54,6 +54,7 @@ function Mapper(store, state, immutable, lazy) {
     this.connected = true;
     this.immutable = immutable !== false;
     this.lazy = lazy === true;
+    this.updating = false;
 
     this._freeze();
 }
@@ -142,7 +143,7 @@ Mapper.prototype.mapping = function (state, obj, prop) {
             // just call it for some reason like observing dependencies collection.
             getter && getter.call(obj);
 
-            if (!this.updating) {
+            if (!this.updating || invokingSetter) {
                 return propVal;
             }
 
@@ -151,22 +152,14 @@ Mapper.prototype.mapping = function (state, obj, prop) {
             var subState = this.state.get(prop);
             if (subState.isObject()) {
                 var id = guid(subState);
-                return store.cache.get(id);
+                // If old value was removed from store cache,
+                // the `propVal` means old value.
+                return store.cache.has(id) ? store.cache.get(id) : propVal;
             } else {
                 return subState.valueOf();
             }
         }),
         set: createMappingFunction((newVal) => {
-            // NOTE: If just the original array reference changed but no changes on it's elements,
-            // do not dispatch to avoid causing empty mutation history.
-            if (invokingSetter
-                || shallowEqual(newVal, propVal)) {
-                // NOTE: If they are equal arrays (reference is changed but all elements are equal),
-                // we should change the value reference to make sure they are the same for invoker.
-                !invokingSetter && (propVal = newVal);
-                return;
-            }
-
             // When current obj is immutable
             // and store doesn't process batching mutations,
             // just return.
@@ -177,6 +170,21 @@ Mapper.prototype.mapping = function (state, obj, prop) {
                                 + ' please do this in it\'s prototype methods.');
             }
 
+            if (invokingSetter) {
+                // NOTE: When `this.immutable=false`, `store.dispatch` will trigger
+                // mapping update immediately, so the setter will be nested invoking.
+                this.updating && (propVal = newVal);
+                return;
+            }
+            // NOTE: If just the original array reference changed but no changes on it's elements,
+            // do not dispatch to avoid causing empty mutation history.
+            if (shallowEqual(newVal, propVal)) {
+                // NOTE: If they are equal arrays (reference is changed but all elements are equal),
+                // we should change the value reference to make sure they are the same for invoker.
+                propVal = newVal;
+                return;
+            }
+
             propVal = newVal;
             // A nomadic mapper should not do any mutations.
             if (this.updating || (!this.connected && !this.lazy)) {
@@ -185,23 +193,20 @@ Mapper.prototype.mapping = function (state, obj, prop) {
             }
 
             invokingSetter = true;
-            // TODO 被循环引用的对象先被引用再被初始引用方解除引用后其去留问题？
             var store = this.store;
             var state = this.state;
             var subState;
             try {
                 var mapper = getBoundMapper(propVal);
-                if (mapper && (mapper.connected || mapper.lazy)) {
-                    // NOTE: The mapper of new value maybe is lazy,
-                    // it hasn't been mounted on root state,
-                    // so it's reference should be set manually.
+                if (mapper && mapper.lazy) {
+                    // NOTE: Lazy mapped state hasn't mounted on root state,
+                    // so a cross reference object should be created manually.
                     subState = mapper.state;
 
                     var id = guid(subState.valueOf());
                     store.dispatch(mutateState(state, prop, createRefObj(id)));
                 } else {
-                    // NOTE: If the mapper of new value is disconnected from it's state,
-                    // it's state should be recreated for processing cross reference correctly.
+                    // NOTE: Recreating state to process cross reference correctly.
                     var path = store.getState().path(state).concat(prop);
                     subState = store.getState().set(path, propVal).get(path);
 
@@ -243,18 +248,23 @@ Mapper.prototype.observe = function (obj) {
 
 var toMap = (result, key) => (result[key] = true) && result;
 Mapper.prototype.update = function (newState, obj) {
+    if (this.updating) {
+        return;
+    }
+
     var store = this.store;
     var oldState = this.state;
 
-    var oldStateKeys = Object.keys(obj).reduce(toMap, {});
+    var oldStateKeys = oldState.keys().reduce(toMap, {});
     var newStateKeys = newState.keys().reduce(toMap, {});
     if (newState.isArray()) {
+        var oldSize = oldState.size();
         var newSize = newState.size();
 
-        if (obj.length > newSize) {
-            Array.prototype.splice.call(obj, newSize, obj.length - newSize);
-        } else if (obj.length < newSize) {
-            for (var i = obj.length; i < newSize; i++) {
+        if (oldSize > newSize) {
+            Array.prototype.splice.call(obj, newSize, oldSize - newSize);
+        } else if (oldSize < newSize) {
+            for (var i = oldSize; i < newSize; i++) {
                 this.mapping(oldState, obj, i);
             }
         }
