@@ -15,7 +15,7 @@ function extractId(nodeOrId) {
 
 function PathLink(parent) {
     this._parent = parent;
-    this._link = new Map();
+    this._link = {};
     this._root = null;
 }
 
@@ -26,17 +26,22 @@ PathLink.prototype.add = function (node, topNode, path) {
 
     var nodeId = guid(node);
     var topNodeId = guid(topNode);
-    this._link.set(nodeId, {
+    this._link[nodeId] = {
         top: topNodeId,
-        path: path
-    });
+        path: path,
+        refs: []
+    };
 
     return this;
 };
 
+/**
+ * @param {Object} oldNode
+ * @param {*} newNode
+ */
 PathLink.prototype.replace = function (oldNode, newNode) {
-    if (guid(oldNode) === guid(newNode)) {
-        return;
+    if (isPrimitive(oldNode) || guid(oldNode) === guid(newNode)) {
+        return this;
     }
 
     var lnk = this.get(oldNode);
@@ -44,8 +49,10 @@ PathLink.prototype.replace = function (oldNode, newNode) {
 
     if (!isPrimitive(newNode)) {
         var newNodeId = guid(newNode);
-        this._link.set(newNodeId, lnk);
+        this._link[newNodeId] = {...lnk, refs: []};
     }
+
+    return this;
 };
 
 PathLink.prototype.remove = function (node) {
@@ -54,20 +61,55 @@ PathLink.prototype.remove = function (node) {
     }
 
     var nodeId = guid(node);
-    // Bring node to leaf
-    this._link.set(nodeId, {
+    // Make node as a leaf
+    this._link[nodeId] = {
         top: null,
-        path: null
-    });
+        path: null,
+        refs: []
+    };
 
     return this;
+};
+
+/**
+ * Record the reference from `node` to `target`.
+ *
+ * @param {Object} node The referring node.
+ * @param {Object/String} target The referred node or it's guid.
+ */
+PathLink.prototype.ref = function (node, target) {
+    var referringId = extractId(node);
+    var referredId = extractId(target);
+    if (isPrimitive(node) || referringId === referredId) {
+        return this;
+    }
+
+    var lnk = this.get(referredId);
+    if (lnk && (lnk.path || referredId === this._root)) {
+        if (lnk.refs.indexOf(referringId) < 0) {
+            lnk.refs.push(referringId);
+        }
+    }
+
+    return this;
+};
+
+/**
+ * Return the nodes which refer to the specified node.
+ *
+ * @return {String[]}
+ */
+PathLink.prototype.getRefs = function (node) {
+    var lnk = this.get(node);
+
+    return lnk ? lnk.refs.slice() : [];
 };
 
 PathLink.prototype.root = function (root) {
     if (!isPrimitive(root)) {
         this._root = guid(root);
     } else {
-        this._link.clear();
+        this._link = {};
     }
 
     return this;
@@ -76,7 +118,7 @@ PathLink.prototype.root = function (root) {
 PathLink.prototype.get = function (nodeOrId) {
     var nodeId = extractId(nodeOrId);
 
-    return this._link.get(nodeId)
+    return this._link[nodeId]
            || (this._parent
                && this._parent.get(this._root)
                && this._parent.get(nodeId));
@@ -115,7 +157,7 @@ PathLink.prototype.path = function (start, end = this._root) {
 PathLink.prototype.clear = function () {
     this._root = null;
     this._parent = null;
-    this._link.clear();
+    this._link = {};
 
     return this;
 };
@@ -160,7 +202,7 @@ PathLink.prototype.mount = function (sourcePathLink, sourceRoot, mountNode) {
         return this;
     } else if (sourcePathLink._parent === this/*sourcePathLink.isBranchOf(this)*/) {
         sourcePathLink._link.forEach((lnk, nodeId) => {
-            this._link.set(nodeId, lnk);
+            this._link[nodeId] = {...lnk, refs: lnk.refs.slice()};
         });
     } else {
         traverse(sourceRoot, (src, top, path) => {

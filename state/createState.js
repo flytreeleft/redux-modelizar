@@ -64,9 +64,23 @@ function setNode(root, pathLink, paths, value) {
         return root;
     }
 
-    return copyNodeByPath(root, pathLink, paths, (node, topNode, path) => {
+    var replacedNode = null;
+    var pathLinkCopy = pathLink.branch();
+    var newRoot = copyNodeByPath(root, pathLink, paths, (node, topNode, path) => {
+        replacedNode = topNode && path && topNode[path];
         return initNode(value, pathLink, topNode, path);
     });
+
+    var refs = pathLinkCopy.getRefs(replacedNode);
+    forEach(refs, (ref) => {
+        var refPaths = pathLink.path(ref);
+        if (refPaths) {
+            newRoot = setNode(newRoot, pathLink, refPaths, replacedNode);
+        }
+        return !refPaths;
+    });
+
+    return newRoot;
 }
 
 var nodeUpdater = (updater, pathLink, node, topNode, path, createIfNotExist) => {
@@ -119,9 +133,24 @@ function removeNode(root, pathLink, paths) {
         return root;
     }
 
-    return copyNodeByPath(root, pathLink, paths, (node, topNode, path) => {
-        return removeTheNode(node);
+    var removedNode = null;
+    var pathLinkCopy = pathLink.branch();
+    var newRoot = copyNodeByPath(root, pathLink, paths, (node, topNode, path) => {
+        return removeTheNode(removedNode = node);
     });
+
+    // If the removed node is referred by other existing node,
+    // mount it to the first referring node.
+    var refs = pathLinkCopy.getRefs(removedNode);
+    forEach(refs, (ref) => {
+        var refPaths = pathLink.path(ref);
+        if (refPaths) {
+            newRoot = setNode(newRoot, pathLink, refPaths, removedNode);
+        }
+        return !refPaths;
+    });
+
+    return newRoot;
 }
 
 const excludePaths = [GUID_SENTINEL, OBJECT_CLASS_SENTINEL];
@@ -709,6 +738,28 @@ export default function createState(initialState, pathLink = null, inited = fals
             });
             // Update the rest elements.
             for (var i = start + values.length; i < nodes.length; i++) {
+                pathLink.add(nodes[i], nodes, i);
+            }
+
+            return createState(nodes, pathLink, true);
+        },
+        sort: function (cb) {
+            var nodes = cloneNode(_root);
+            var pathLink = _pathLink.branch(nodes);
+
+            nodes.sort(cb);
+            for (var i = 0; i < nodes.length; i++) {
+                pathLink.add(nodes[i], nodes, i);
+            }
+
+            return createState(nodes, pathLink, true);
+        },
+        reverse: function () {
+            var nodes = cloneNode(_root);
+            var pathLink = _pathLink.branch(nodes);
+
+            nodes.reverse();
+            for (var i = 0; i < nodes.length; i++) {
                 pathLink.add(nodes[i], nodes, i);
             }
 

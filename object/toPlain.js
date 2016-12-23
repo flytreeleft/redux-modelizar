@@ -78,16 +78,20 @@ export default function toPlain(source, processor = emptyProcessor) {
         topDst = stack.pop();
         topDstRefObjCount = stack.pop();
 
-        var copyId = refs.get(src);
-        if (copyId) {
-            dst = createRefObj(copyId);
+        if (isRefObj(src)) {
+            dst = {...src};
         } else {
-            src = processSrcObj(src);
-            dst = createDstObj(src);
-            // Pre-processor
-            dst = processor.pre(dst, topDst, topDstProp, src, pathFromRoot);
+            var copyId = refs.get(src);
+            if (copyId) {
+                dst = createRefObj(copyId);
+            } else {
+                src = processSrcObj(src);
+                dst = createDstObj(src);
+            }
         }
 
+        // Pre-processor
+        dst = processor.pre(dst, topDst, topDstProp, src, pathFromRoot);
         // Pre-processor may return a primitive value.
         if (isRefObj(dst)) {
             refs.set(src, parseRefKey(dst));

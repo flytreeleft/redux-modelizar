@@ -11,7 +11,8 @@ import traverse from '../object/traverse';
 import {
     OBJECT_CLASS_SENTINEL,
     isRefObj,
-    createRefObj
+    createRefObj,
+    parseRefKey
 } from '../object/sentinels';
 
 export function cloneNode(node) {
@@ -35,31 +36,40 @@ export function cloneNode(node) {
  * @param {String/Number/Symbol} [path] The reference property name of `topNode`.
  */
 export function initNode(node, pathLink, topNode = null, path = null) {
-    var goTop = (paths) => paths.slice(0, paths.length - 1);
+    var pageLinkCopy = pathLink.branch();
+    var newNodePaths = (pathLink.path(topNode) || []).concat(path || []);
+
+    var getTopPath = (paths) => paths.slice(0, paths.length - 1);
+    var isSubPath = (sub, top) => sub.length >= top.length
+                                  && isEqual(sub.slice(0, top.length), top);
+    // var isSiblingPath = (left, right) => left.length === right.length
+    //                                      && isEqual(getTopPath(left), getTopPath(right));
     var isRefTopNode = (node, mountPaths) => {
-        // Check from the root node
-        var checkPaths = !isPrimitive(node) && pathLink.path(node);
-        if (checkPaths) {
-            // NOTE: Sibling object reference will be ignored.
-            return checkPaths.length !== mountPaths.length
-                   || !isEqual(goTop(checkPaths), goTop(mountPaths));
-        }
-        return false;
+        // Check reference from the root in the original path link.
+        var checkPaths = !isPrimitive(node) && pageLinkCopy.path(node);
+        return checkPaths
+               && !isSubPath(checkPaths, newNodePaths)/*
+               && !isSiblingPath(checkPaths, mountPaths)*/;
     };
 
     // var tag = 'Initial node - toPlain';
     // console.profile(tag);
     // console.time(tag);
-    var topPaths = (pathLink.path(topNode) || []).concat(path || []);
     var newNode = toPlain(node, {
         pre: (dst, dstTop, path, src, paths) => {
             // Check if the sub node tree
             // contains top node references or not.
-            var mountPaths = topPaths.concat(paths);
-            if (!isRefObj(dst) && isRefTopNode(src, mountPaths)) {
+            var mountPaths = newNodePaths.concat(paths);
+            if (!isRefObj(dst) && !isRefObj(src) && isRefTopNode(src, mountPaths)) {
                 dst = createRefObj(guid(src));
             }
             pathLink.add(dst, dstTop, path);
+
+            if (isRefObj(dst)) {
+                var referred = parseRefKey(dst);
+                pathLink.ref(dst, referred);
+            }
+
             return dst;
         },
         post: (dst) => Object.freeze(dst)
