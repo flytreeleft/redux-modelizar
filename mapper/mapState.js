@@ -2,7 +2,6 @@ import isBoolean from 'lodash/isBoolean';
 import isArray from 'lodash/isArray';
 
 import {
-    createRefObj,
     isRefObj,
     isFunctionObj,
     isDateObj,
@@ -28,8 +27,7 @@ import {
     getBoundMapper,
     bindMapper,
     createMappingFunction,
-    isMappingFunction,
-    shallowEqual
+    isMappingFunction
 } from './utils';
 import {
     overwriteArray,
@@ -38,6 +36,9 @@ import {
 import {
     mutateState
 } from './actions';
+import {
+    notifyDep
+} from './observe';
 
 /**
  *         <------------[reflect]-------------
@@ -48,12 +49,11 @@ import {
  * Immutable state instances will have the same guid
  * if they represent the same state.
  */
-function Mapper(store, state, immutable, lazy) {
+function Mapper(store, state, immutable) {
     this.store = store;
     this.state = state;
     this.connected = true;
     this.immutable = immutable !== false;
-    this.lazy = lazy === true;
     this.updating = false;
 
     this._freeze();
@@ -133,7 +133,7 @@ Mapper.prototype.mapping = function (state, obj, prop) {
     }
 
     var invokingSetter = false;
-    var propVal = mapStateToObj(this.store, state.get(prop), obj[prop], this.immutable, this.lazy, prop);
+    var propVal = mapStateToObj(this.store, state.get(prop), obj[prop], this.immutable, prop);
 
     Object.defineProperty(obj, prop, {
         enumerable: true,
@@ -160,9 +160,6 @@ Mapper.prototype.mapping = function (state, obj, prop) {
             }
         }),
         set: createMappingFunction((newVal) => {
-            // When current obj is immutable
-            // and store doesn't process batching mutations,
-            // just return.
             if (!this.updating && this.immutable && !this.store.isBatching()) {
                 // TODO 开发阶段抛出异常，发布阶段log warning。redux-modelizar提供全局的配置
                 throw new Error('Immutable state mapping:'
@@ -170,56 +167,23 @@ Mapper.prototype.mapping = function (state, obj, prop) {
                                 + ' please do this in it\'s prototype methods.');
             }
 
-            if (invokingSetter) {
-                // NOTE: When `this.immutable=false`, `store.dispatch` will trigger
-                // mapping update immediately, so the setter will be nested invoking.
+            if (invokingSetter || propVal === newVal) {
+                // NOTE: `store.dispatch` will trigger mapping update immediately,
+                // so the setter will be nested invoking.
                 this.updating && (propVal = newVal);
-                return;
-            }
-            // NOTE: If just the original array reference changed but no changes on it's elements,
-            // do not dispatch to avoid causing empty mutation history.
-            if (shallowEqual(newVal, propVal)) {
-                // NOTE: If they are equal arrays (reference is changed but all elements are equal),
-                // we should change the value reference to make sure they are the same for invoker.
-                propVal = newVal;
                 return;
             }
 
             propVal = newVal;
             // A nomadic mapper should not do any mutations.
-            if (this.updating || (!this.connected && !this.lazy)) {
+            if (this.updating || !this.connected) {
                 setter && setter.call(obj, propVal);
                 return;
             }
 
             invokingSetter = true;
-            var store = this.store;
-            var state = this.state;
-            var subState;
             try {
-                var mapper = getBoundMapper(propVal);
-                if (mapper && mapper.lazy) {
-                    // NOTE: Lazy mapped state hasn't mounted on root state,
-                    // so a cross reference object should be created manually.
-                    subState = mapper.state;
-
-                    var id = guid(subState.valueOf());
-                    store.dispatch(mutateState(state, prop, createRefObj(id)));
-                } else {
-                    // NOTE: Recreating state to process cross reference correctly.
-                    var path = store.getState().path(state).concat(prop);
-                    subState = store.getState().set(path, propVal).get(path);
-
-                    store.dispatch(mutateState(state, prop, subState));
-                    // NOTE: Mutation can be lazy, the property state maybe hasn't mutated,
-                    // so create a mapper to accept the following mutations.
-                    if (store.isBatching()) {
-                        propVal = mapStateToObj(store, subState, propVal, this.immutable, true, prop);
-                    }
-                }
-
-                // Trigger mutation notify of Vue.js
-                setter && setter.call(obj, propVal);
+                this.store.dispatch(mutateState(this.state, prop, propVal));
             } finally {
                 invokingSetter = false;
             }
@@ -235,13 +199,14 @@ Mapper.prototype.observe = function (obj) {
     var store = this.store;
     var state = this.state;
     this.unsubscribe = store.subscribe(state, (newState) => {
-        this.lazy = false;
         if (!this.connected) {
+            store.cache.remove(obj);
             this.unsubscribe();
             this.unsubscribe = null;
-            store.cache.remove(obj);
         } else {
             this.update(newState, obj);
+            // Mutation notify for Vue.js
+            notifyDep(obj);
         }
     });
 };
@@ -286,9 +251,10 @@ Mapper.prototype.update = function (newState, obj) {
     try {
         this.updating = true;
         forEach(newStateKeys, (existing, key) => {
-            if (!newState.get(key).same(oldState.get(key))) {
-                obj[key] = mapStateToObj(store, newState.get(key), obj[key], this.immutable, this.lazy, key);
+            if (newState.get(key).same(oldState.get(key))) {
+                return;
             }
+            obj[key] = mapStateToObj(store, newState.get(key), obj[key], this.immutable, key);
         });
     } finally {
         this.updating = false;
@@ -296,63 +262,48 @@ Mapper.prototype.update = function (newState, obj) {
     }
 };
 
-function fillElements(state, obj, oldObj) {
-    if (isArray(obj) && isArray(oldObj)) {
-        var elements = oldObj.reduce((result, val) => {
-            if (!isPrimitive(val)) {
-                result[guid(val)] = val;
-            }
-            return result;
-        }, {});
+function mapStateToObj(store, state, obj, immutable, topProp) {
+    var stateVal = state.valueOf();
+    var stateId = guid(stateVal);
 
-        state.valueOf().forEach((val, i) => {
-            if (!isPrimitive(val)) {
-                obj[i] = elements[guid(val)];
-            }
-        });
+    if (isPrimitive(stateVal)) {
+        return stateVal;
     }
-}
-
-function mapStateToObj(store, state, obj, immutable, lazy, topProp) {
-    var val = state.valueOf();
-    var id = guid(val);
-
-    if (isPrimitive(val)) {
-        return val;
+    else if (isRefObj(stateVal)) {
+        // TODO 若先映射引用，则被引用对象可能会不存在
+        var refId = parseRefKey(stateVal);
+        return store.cache.get(refId);
     }
-    else if (isRefObj(val)) {
-        id = parseRefKey(val);
-        return store.cache.get(id);
-    }
-    else if (isFunctionObj(val)) {
-        var fn = parseFunction(val);
+    else if (isFunctionObj(stateVal)) {
+        var fn = parseFunction(stateVal);
         if (!isNullOrUndefined(topProp) && !isMappingFunction(fn)) {
             fn = invokeInStoreBatch(`this$${topProp}`, fn);
         }
         return fn;
     }
-    else if (isRegExpObj(val)) {
-        return parseRegExp(val);
+    else if (isRegExpObj(stateVal)) {
+        return parseRegExp(stateVal);
     }
-    else if (isDateObj(val)) {
+    else if (isDateObj(stateVal)) {
         // TODO Create a readonly date
-        return parseDate(val);
+        return parseDate(stateVal);
+    }
+
+    if (store.cache.has(stateId)) {
+        // Share state mapping instance always.
+        return store.cache.get(stateId);
     }
 
     if (isPrimitive(obj)
-        || (isArray(val) && !isArray(obj))
-        || (!isArray(val) && isArray(obj))
-        || (isBoundState(obj) && id !== guid(obj))) {
-        var oldObj = obj;
-        obj = createRealObj(val);
-
-        // Save the original elements for reuse when mapping state.
-        fillElements(state, obj, oldObj);
+        || (isArray(stateVal) && !isArray(obj))
+        || (!isArray(stateVal) && isArray(obj))
+        || (isBoundState(obj) && stateId !== guid(obj))) {
+        obj = createRealObj(stateVal);
     }
 
     var mapper = getBoundMapper(obj);
     if (!mapper) {
-        mapper = new Mapper(store, state, immutable, lazy);
+        mapper = new Mapper(store, state, immutable);
         mapper.bind(obj);
     } else {
         store.cache.put(obj);

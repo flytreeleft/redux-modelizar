@@ -9,11 +9,11 @@ import {
     isMappingFunction
 } from './utils';
 import {
-    removeSubState,
     mutateState
 } from './actions';
 
 const arrayProto = Array.prototype;
+const slice = arrayProto.slice;
 const arrayMethods = Object.create(arrayProto);
 ['push', 'pop', 'shift', 'unshift', 'splice', 'sort', 'reverse'].forEach(function (method) {
     var original = arrayProto[method];
@@ -27,46 +27,33 @@ const arrayMethods = Object.create(arrayProto);
             var state = mapper.state;
 
             var args = [...arguments];
-            var result;
-            store.doBatch(() => {
-                var origSize = this.length;
+            return store.doBatch(() => {
+                var copy = slice.apply(this);
+                var newState = state[method].apply(state, args);
+                store.dispatch(mutateState(state, [], newState.valueOf()));
 
-                result = original.apply(this, args);
-                // Remove redundant elements
-                if (this.length < origSize) {
-                    for (let i = origSize - 1; i >= this.length; i--) {
-                        store.dispatch(removeSubState(state, i));
-                    }
+                var result;
+                switch (method) {
+                    case 'sort':
+                    case 'reverse':
+                        result = this;
+                        break;
+                    case 'push':
+                    case 'unshift':
+                        result = this.length;
+                        break;
+                    case 'splice':
+                        if (args.length > 0) {
+                            result = slice.call(this, args[0], args[0] + args[1]);
+                        }
+                        break;
+                    default:
+                        result = original.apply(copy, args);
                 }
-                // Map new elements
-                else if (this.length > origSize) {
-                    for (let i = origSize; i < this.length; i++) {
-                        store.dispatch(mutateState(state, i, this[i]));
-                    }
-                }
+                return result;
             }, {
                 method: `Array$${method}`
             });
-
-            var ob = this.__ob__;
-            if (ob) {
-                var inserted;
-                switch (method) {
-                    case 'push':
-                    case 'unshift':
-                        inserted = args;
-                        break;
-                    case 'splice':
-                        inserted = args.slice(2);
-                        break;
-                }
-                if (inserted) {
-                    ob.observeArray(inserted);
-                }
-                ob.dep.notify();
-            }
-
-            return result;
         }
     });
 });

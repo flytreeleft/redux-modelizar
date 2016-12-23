@@ -2,33 +2,28 @@ import isPrimitive from '../utils/isPrimitive';
 
 export const PROP_OBSERVER = '__ob__';
 
-function isObserved(obj) {
+export function isObserved(obj) {
     return !isPrimitive(obj) && obj.hasOwnProperty(PROP_OBSERVER);
 }
 
-export function depNotify(obj) {
+export function observeCheck(obj) {
     if (isObserved(obj)) {
-        obj[PROP_OBSERVER].dep.notify();
+        var ob = obj[PROP_OBSERVER];
+        var items = Object.keys(obj).map((key) => {
+            return obj[key];
+        });
+
+        ob.observeArray(items);
     }
+    return obj;
 }
 
-export function observeCheck(obj) {
-    if (!isObserved(obj)) {
-        return;
+export function notifyDep(obj) {
+    if (isObserved(obj)) {
+        observeCheck(obj);
+
+        var ob = obj[PROP_OBSERVER];
+        ob.dep.notify();
     }
-
-    var ob = obj[PROP_OBSERVER];
-    var Observer = ob.constructor;
-    Object.keys(obj).forEach((key) => {
-        var val = obj[key];
-        if (val instanceof Function
-            || isPrimitive(val)
-            || !Object.isExtensible(val)
-            || isObserved(val)
-            || val._isVue) {
-            return;
-        }
-
-        ob = new Observer(val);
-    });
+    return obj;
 }

@@ -68,6 +68,7 @@ export default function (reducer, preloadedState, enhancer) {
         }
     }
 
+    // NOTE: One state can be mapped to only one object.
     const mappingCache = {};
     const cache = {
         put: (obj) => {
@@ -85,6 +86,9 @@ export default function (reducer, preloadedState, enhancer) {
         },
         has: (id) => {
             return id in mappingCache;
+        },
+        cached: (obj) => {
+            return !isPrimitive(obj) && cache.has(guid(obj));
         }
     };
 
@@ -122,12 +126,7 @@ export default function (reducer, preloadedState, enhancer) {
     return {
         ...store,
         dispatch: (action) => {
-            if (batching) {
-                actions.push(action);
-                return action;
-            } else {
-                return dispatch(action);
-            }
+            return dispatch(action);
         },
         subscribe: (state, listener) => {
             if (state instanceof Function) {
