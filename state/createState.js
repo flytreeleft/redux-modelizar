@@ -222,14 +222,8 @@ export default function createState(initialState, pathLink = null, inited = fals
     var extractPath = (state, path) => {
         if (path === null) {
             return null;
-        }
-
-        if (isArray(path)) {
-            if (path.length === 0) {
-                return path;
-            } else {
-                path = path.join('.');
-            }
+        } else if (isArray(path)) {
+            return path;
         }
 
         if (isString(path)) {

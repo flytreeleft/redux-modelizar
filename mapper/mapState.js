@@ -133,7 +133,7 @@ Mapper.prototype.mapping = function (state, obj, prop) {
     }
 
     var invokingSetter = false;
-    var propVal = mapStateToObj(this.store, state.get(prop), obj[prop], this.immutable, prop);
+    var propVal = mapStateToObj(this.store, state.get([prop]), obj[prop], this.immutable, prop);
 
     Object.defineProperty(obj, prop, {
         enumerable: true,
@@ -149,7 +149,7 @@ Mapper.prototype.mapping = function (state, obj, prop) {
 
             // Return the old mapping value when updating mapping.
             var store = this.store;
-            var subState = this.state.get(prop);
+            var subState = this.state.get([prop]);
             if (subState.isObject()) {
                 var id = guid(subState);
                 // If old value was removed from store cache,
@@ -251,10 +251,10 @@ Mapper.prototype.update = function (newState, obj) {
     try {
         this.updating = true;
         forEach(newStateKeys, (existing, key) => {
-            if (newState.get(key).same(oldState.get(key))) {
+            if (newState.get([key]).same(oldState.get([key]))) {
                 return;
             }
-            obj[key] = mapStateToObj(store, newState.get(key), obj[key], this.immutable, key);
+            obj[key] = mapStateToObj(store, newState.get([key]), obj[key], this.immutable, key);
         });
     } finally {
         this.updating = false;
