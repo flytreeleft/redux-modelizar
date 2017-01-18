@@ -39,7 +39,7 @@ export function initNode(node, pathLink, topNode = null, path = null) {
     var pageLinkCopy = pathLink.branch();
     var newNodePaths = (pathLink.path(topNode) || []).concat(path || []);
 
-    var getTopPath = (paths) => paths.slice(0, paths.length - 1);
+    // var getTopPath = (paths) => paths.slice(0, paths.length - 1);
     var isSubPath = (sub, top) => sub.length >= top.length
                                   && isEqual(sub.slice(0, top.length), top);
     // var isSiblingPath = (left, right) => left.length === right.length
