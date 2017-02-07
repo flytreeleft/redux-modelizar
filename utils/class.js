@@ -15,8 +15,7 @@ export function getMethodsUntilBase(cls) {
 
     return uniq(methods).filter(name => {
         return ['constructor', 'override', 'superclass',
-                'supr', 'extend'
-               ].indexOf(name) < 0;
+                'supr', 'extend'].indexOf(name) < 0;
     });
 }
 
