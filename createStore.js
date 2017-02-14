@@ -193,7 +193,9 @@ export default function (reducer, preloadedState, enhancer) {
                 return bind;
             };
             // Trigger first binding.
-            subscribe(bind());
+            // NOTE: Using this.subscribe to make sure
+            // the listener executing order is same as the subscribing order.
+            this.subscribe(bind());
 
             return target;
         },
