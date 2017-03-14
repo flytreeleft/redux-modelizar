@@ -1,95 +1,125 @@
-import isArray from 'lodash/isArray';
-
 import isPrimitive from '../utils/isPrimitive';
 import {
-    isClass
-} from '../utils/class';
-import guid, {GUID_SENTINEL} from '../utils/guid';
+    createNE,
+    isArray,
+    isDate
+} from '../../immutable';
+import {
+    mutateState,
+    removeSubState
+} from './actions';
 
-/**
- * Copy properties from `src` to `target` as unenumerable but configurable properties.
- */
-export function copyAugment(target, src) {
-    var keys = Object.getOwnPropertyNames(src);
+function getMethodsUntilBase(cls) {
+    var proto = cls.prototype;
+    var reservedKeys = ['constructor', 'override', 'superclass', 'supr', 'extend'];
+    var methods = {};
 
-    keys.forEach((key) => {
-        Object.defineProperty(target, key, {
-            enumerable: false,
-            configurable: true,
-            value: src[key]
+    while (proto && proto.constructor && proto.constructor !== Object) {
+        // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/getOwnPropertyNames
+        Object.getOwnPropertyNames(proto).forEach((name) => {
+            var value = proto[name];
+            if (reservedKeys.indexOf(name) < 0 && value instanceof Function && !methods[name]) {
+                methods[name] = value;
+            }
         });
-    });
-    return target;
+
+        proto = Object.getPrototypeOf(proto);
+    }
+    return methods;
 }
 
-export function invokeInStoreBatch(name, callback) {
-    if (isClass(callback)) {
-        return callback;
+const PROP_STATE_MAPPER = '[[ModelizarMapper]]';
+export function reflectProto(obj, mapper) {
+    var cls = obj.constructor;
+    var methods = {};
+
+    if (isArray(obj)) {
+        ['push', 'pop', 'shift', 'unshift', 'splice', 'sort', 'reverse'].forEach(function (method) {
+            var original = obj[method];
+            methods[method] = function batchMutate() {
+                var mapper = getBoundMapper(this);
+                var store = mapper.store;
+                var state = mapper.state;
+
+                var args = [...arguments];
+                return store.doBatch(() => {
+                    var result = original.apply(this, args);
+                    var newState = state[method].apply(state, args);
+                    store.dispatch(mutateState(state, [], newState));
+
+                    return result;
+                }, {
+                    method: `Array$${method}`
+                });
+            };
+        });
+    } else if (isDate(obj)) {
+        Object.getOwnPropertyNames(Date.prototype)
+              .filter((method) => method.startsWith('set'))
+              .forEach((method) => {
+                  var original = obj[method];
+                  methods[method] = function batchMutate() {
+                      var mapper = getBoundMapper(this);
+                      var store = mapper.store;
+                      var state = mapper.state;
+
+                      var args = [...arguments];
+                      return store.doBatch(() => {
+                          var result = original.apply(this, args);
+                          store.dispatch(mutateState(state, [], this));
+
+                          return result;
+                      }, {
+                          method: `Date${method}`
+                      });
+                  };
+              });
+    } else {
+        methods = getMethodsUntilBase(cls);
+        Object.keys(methods).forEach((name) => {
+            var callback = methods[name];
+            methods[name] = function batchMutate() {
+                var mapper = getBoundMapper(this);
+                var store = mapper.store;
+                var args = [...arguments];
+
+                return store.doBatch(() => {
+                    return callback.apply(this, args);
+                }, {
+                    method: `${cls.name}$${name}`
+                });
+            };
+        });
     }
 
-    return createMappingFunction(function storeMappingBatch() {
-        var mapper = getBoundMapper(this);
-        var store = mapper.store;
-        var args = [...arguments];
-
-        return store.doBatch(() => {
-            return callback.apply(this, args);
-        }, {
-            method: name
-        });
+    var $set = obj.$set;
+    var $remove = obj.$remove;
+    Object.assign(methods, {
+        [PROP_STATE_MAPPER]: mapper,
+        $set: function (prop, value) {
+            // Trigger mapper.update() to add new property.
+            mapper.store.dispatch(mutateState(obj, prop, value));
+            $set && $set.call(obj, prop, value);
+        },
+        $remove: function (prop) {
+            // Trigger mapper.update() to remove property.
+            mapper.store.dispatch(removeSubState(obj, prop));
+            $remove && $remove.call(obj, prop);
+        }
     });
-}
 
-const PROP_STATE_MAPPER = '__[STORE_STATE_MAPPER]__';
-/**
- * Check if the specified `obj` is mapping a state or not.
- *
- * @return {Boolean} True, if the `obj` is bound to a state,
- *                      and it's mapper is connecting the state
- *                      or is a lazy mapper.
- */
-export function isMappingState(obj) {
-    var mapper = getBoundMapper(obj);
-    return mapper && (mapper.connected || mapper.lazy);
+    var proto = Object.create(cls.prototype, createNE(methods));
+    Object.setPrototypeOf(obj, proto);
+
+    return obj;
 }
 
 export function isBoundState(obj) {
     return !!getBoundMapper(obj);
 }
 
-export function getMappedState(obj) {
-    var mapper = getBoundMapper(obj);
-    return mapper ? mapper.state : null;
-}
-
 export function getBoundMapper(obj) {
     return !isPrimitive(obj) ? obj[PROP_STATE_MAPPER] : null;
-}
-
-export function bindMapper(obj, mapper) {
-    Object.defineProperty(obj, PROP_STATE_MAPPER, {
-        enumerable: false,
-        configurable: false,
-        value: mapper
-    });
-
-    // Record global unique id.
-    Object.defineProperty(obj, GUID_SENTINEL, {
-        enumerable: false,
-        configurable: false,
-        get: () => guid(mapper.state.valueOf()),
-        set: (v) => v
-    });
-}
-
-const PROP_MAPPING_FUNCTION = '__[STORE_MAPPING_FUNCTION]__';
-export function createMappingFunction(callback) {
-    callback[PROP_MAPPING_FUNCTION] = true;
-    return callback;
-}
-
-export function isMappingFunction(callback) {
-    return callback instanceof Function && !!callback[PROP_MAPPING_FUNCTION];
 }
 
 export function shallowEqual(obj, other) {

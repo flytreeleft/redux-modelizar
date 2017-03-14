@@ -1,44 +1,27 @@
+import invariant from 'invariant';
+
 import isBoolean from 'lodash/isBoolean';
-import isArray from 'lodash/isArray';
 
-import {
-    isRefObj,
-    isFunctionObj,
-    isDateObj,
-    isRegExpObj,
-    parseRefKey,
-    parseFunction,
-    parseDate,
-    parseRegExp
-} from '../object/sentinels';
-import {
-    createRealObj
-} from '../object/toReal';
+import Immutable, {
+    getNodeByPath,
+    isConfigurable,
+    isWritable
+} from '../../immutable';
 
-import isPrimitive from '../utils/isPrimitive';
-import isConfigurable from '../utils/isConfigurable';
-import isNullOrUndefined from '../utils/isNullOrUndefined';
-import guid from '../utils/guid';
 import forEach from '../utils/forEach';
+import instance from '../utils/instance';
 
 import {
-    invokeInStoreBatch,
+    getFunctionByName
+} from '../object/functions';
+import {
     isBoundState,
     getBoundMapper,
-    bindMapper,
-    createMappingFunction,
-    isMappingFunction
+    reflectProto
 } from './utils';
-import {
-    overwriteArray,
-    overwriteObject
-} from './overwrite';
 import {
     mutateState
 } from './actions';
-import {
-    notifyDep
-} from './observe';
 
 /**
  *         <------------[reflect]-------------
@@ -52,75 +35,37 @@ import {
 function Mapper(store, state, immutable) {
     this.store = store;
     this.state = state;
-    this.connected = true;
     this.immutable = immutable !== false;
     this.updating = false;
-
-    this._freeze();
 }
 
-Mapper.prototype._freeze = function () {
-    var state = this.state;
-    var store = this.store;
-
-    Object.defineProperties(this, {
-        state: {
-            configurable: false,
-            get: () => state,
-            set: (v) => v
-        },
-        store: {
-            configurable: false,
-            get: () => store,
-            set: (v) => v
-        },
-        connected: {
-            configurable: false,
-            get: () => {
-                return store.getState().has(state);
-            }
-        },
-        connect: {
-            configurable: false,
-            value: (newState) => {
-                Mapper.prototype.connect.call(this, newState);
-                state = newState;
-            }
-        }
-    });
-};
-
 Mapper.prototype.connect = function (state) {
-    if (!this.state.is(state)) {
+    if (!Immutable.same(this.state, state)) {
         throw new Error('Trying to map another different state is not allowed.');
     }
     this.state = state;
 };
 
 /**
- * @param {Object} [obj]
+ * @param {Object} obj
+ * @param {Object} root
  */
-Mapper.prototype.bind = function (obj) {
-    if (isPrimitive(obj) || isBoundState(obj)) {
+Mapper.prototype.bind = function (obj, root) {
+    if (isBoundState(obj)) {
         return;
     }
-    bindMapper(obj, this);
+    reflectProto(obj, this);
 
-    this.store.cache.put(obj);
-    if (isArray(obj)) {
-        // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/proto
-        overwriteArray(obj);
-    } else {
-        overwriteObject(obj);
-    }
-
+    var reservedKeys = ['$fn', '$class'];
     var state = this.state;
-    state.keys().forEach((key) => {
-        this.mapping(state, obj, key);
-    });
+    state.keys()
+         .filter((key) => reservedKeys.indexOf(key) < 0)
+         .forEach((key) => {
+             this.mapping(state, obj, key, root);
+         });
 };
 
-Mapper.prototype.mapping = function (state, obj, prop) {
+Mapper.prototype.mapping = function (state, obj, prop, root) {
     if (!isConfigurable(obj, prop)) {
         return;
     }
@@ -128,38 +73,19 @@ Mapper.prototype.mapping = function (state, obj, prop) {
     var property = Object.getOwnPropertyDescriptor(obj, prop);
     var getter = property && property.get;
     var setter = property && property.set;
-    if (isMappingFunction(setter)) {
-        return;
-    }
 
-    var invokingSetter = false;
-    var propVal = mapStateToObj(this.store, state.get([prop]), obj[prop], this.immutable, prop);
+    var propVal = mapStateToObj(this.store, state.get([prop]), obj[prop], root, this.immutable);
 
     Object.defineProperty(obj, prop, {
         enumerable: true,
         configurable: true,
-        get: createMappingFunction(() => {
+        get: () => {
             // NOTE: Do not accept the value from the original getter,
             // just call it for some reason like observing dependencies collection.
             getter && getter.call(obj);
-
-            if (!this.updating || invokingSetter) {
-                return propVal;
-            }
-
-            // Return the old mapping value when updating mapping.
-            var store = this.store;
-            var subState = this.state.get([prop]);
-            if (subState.isObject()) {
-                var id = guid(subState);
-                // If old value was removed from store cache,
-                // the `propVal` means old value.
-                return store.cache.has(id) ? store.cache.get(id) : propVal;
-            } else {
-                return subState.valueOf();
-            }
-        }),
-        set: createMappingFunction((newVal) => {
+            return propVal;
+        },
+        set: (newVal) => {
             if (!this.updating && this.immutable && !this.store.isBatching()) {
                 // TODO 开发阶段抛出异常，发布阶段log warning。redux-modelizar提供全局的配置
                 throw new Error('Immutable state mapping:'
@@ -167,58 +93,30 @@ Mapper.prototype.mapping = function (state, obj, prop) {
                                 + ' please do this in it\'s prototype methods.');
             }
 
-            if (invokingSetter || propVal === newVal) {
-                // NOTE: `store.dispatch` will trigger mapping update immediately,
-                // so the setter will be nested invoking.
-                this.updating && (propVal = newVal);
+            if (propVal === newVal) {
                 return;
             }
 
             propVal = newVal;
-            // A nomadic mapper should not do any mutations.
-            if (this.updating || !this.connected) {
-                setter && setter.call(obj, propVal);
-                return;
+            setter && setter.call(obj, propVal);
+
+            if (!this.updating) {
+                this.store.dispatch(mutateState(obj, [prop], propVal));
             }
-
-            invokingSetter = true;
-            try {
-                this.store.dispatch(mutateState(this.state, prop, propVal));
-            } finally {
-                invokingSetter = false;
-            }
-        })
-    });
-};
-
-Mapper.prototype.observe = function (obj) {
-    if (this.unsubscribe) {
-        return;
-    }
-
-    var store = this.store;
-    var state = this.state;
-    this.unsubscribe = store.subscribe(state, (newState) => {
-        if (!this.connected) {
-            store.cache.remove(obj);
-            this.unsubscribe();
-            this.unsubscribe = null;
-        } else {
-            this.update(newState, obj);
-            // Mutation notify for Vue.js
-            notifyDep(obj);
         }
     });
 };
 
 var toMap = (result, key) => (result[key] = true) && result;
-Mapper.prototype.update = function (newState, obj) {
-    if (this.updating) {
-        return;
-    }
-
+Mapper.prototype.update = function (newState, obj, root) {
     var store = this.store;
     var oldState = this.state;
+    if (this.updating
+        || Immutable.equals(oldState, newState)
+        || !Immutable.same(oldState, newState)) {
+        return;
+    }
+    this.connect(newState);
 
     var oldStateKeys = oldState.keys().reduce(toMap, {});
     var newStateKeys = newState.keys().reduce(toMap, {});
@@ -230,7 +128,7 @@ Mapper.prototype.update = function (newState, obj) {
             Array.prototype.splice.call(obj, newSize, oldSize - newSize);
         } else if (oldSize < newSize) {
             for (var i = oldSize; i < newSize; i++) {
-                this.mapping(oldState, obj, i);
+                this.mapping(newState, obj, i, root);
             }
         }
     } else {
@@ -243,7 +141,7 @@ Mapper.prototype.update = function (newState, obj) {
         // Bind new properties to `obj`
         forEach(newStateKeys, (existing, key) => {
             if (!oldStateKeys[key]) {
-                this.mapping(oldState, obj, key);
+                this.mapping(newState, obj, key, root);
             }
         });
     }
@@ -251,97 +149,107 @@ Mapper.prototype.update = function (newState, obj) {
     try {
         this.updating = true;
         forEach(newStateKeys, (existing, key) => {
-            if (newState.get([key]).same(oldState.get([key]))) {
-                return;
+            var oldSubState = oldState.get([key]);
+            var newSubState = newState.get([key]);
+
+            if (isWritable(obj, key) && !Immutable.equals(oldSubState, newSubState)) {
+                obj[key] = mapStateToObj(store, newSubState, obj[key], root, this.immutable);
             }
-            obj[key] = mapStateToObj(store, newState.get([key]), obj[key], this.immutable, key);
         });
     } finally {
         this.updating = false;
-        this.connect(newState);
     }
 };
 
-function mapStateToObj(store, state, obj, immutable, topProp) {
-    var stateVal = state.valueOf();
-    var stateId = guid(stateVal);
+function parseRegExp(exp) {
+    if (typeof exp === 'string' && /^\/.+\/([igm]*)$/.test(exp)) {
+        // NOTE: Avoid xss attack
+        return new Function(`return ${exp};`)();
+    } else {
+        return null;
+    }
+}
 
-    if (isPrimitive(stateVal)) {
-        return stateVal;
-    }
-    else if (isRefObj(stateVal)) {
-        // TODO 若先映射引用，则被引用对象可能会不存在
-        var refId = parseRefKey(stateVal);
-        return store.cache.get(refId);
-    }
-    else if (isFunctionObj(stateVal)) {
-        var fn = parseFunction(stateVal);
-        if (!isNullOrUndefined(topProp) && !isMappingFunction(fn)) {
-            fn = invokeInStoreBatch(`this$${topProp}`, fn);
+function createRealObj(state, realObj) {
+    var obj = realObj;
+    if (!Immutable.same(realObj, state)) {
+        if (state.isArray()) {
+            obj = new Array(state.size());
+        } else if (state.isDate()) {
+            obj = new Date(state.valueOf());
+        } else if (state.$class) {
+            var ctor = getFunctionByName(state.$class);
+            invariant(
+                ctor,
+                `No class constructor '${state.$class}' was registered.`
+            );
+            obj = instance(ctor);
+        } else {
+            obj = {};
         }
-        return fn;
     }
-    else if (isRegExpObj(stateVal)) {
-        return parseRegExp(stateVal);
-    }
-    else if (isDateObj(stateVal)) {
-        // TODO Create a readonly date
-        return parseDate(stateVal);
+    Immutable.guid(obj, Immutable.guid(state));
+
+    return obj;
+}
+
+function mapStateToObj(store, state, obj, rootObj, immutable) {
+    if (!Immutable.isInstance(state)) {
+        return state;
+    } else if (state.isCycleRef()) {
+        var refObjPath = store.getState().path(state.valueOf());
+        var realRootPath = store.getState().path(rootObj);
+        for (let i = 0; i < realRootPath; i++) {
+            invariant(
+                /* eslint-disable eqeqeq */
+                realRootPath[i] == refObjPath[i],
+                /* eslint-enable eqeqeq */
+                'The cycle reference object isn\'t in the same root.'
+            );
+        }
+
+        return getNodeByPath(rootObj, refObjPath.slice(realRootPath.length));
+    } else if (state.isRegExp()) {
+        return parseRegExp(state.valueOf());
+    } else if (state.$fn) {
+        return getFunctionByName(state.$fn);
     }
 
-    if (store.cache.has(stateId)) {
-        // Share state mapping instance always.
-        return store.cache.get(stateId);
-    }
-
-    if (isPrimitive(obj)
-        || (isArray(stateVal) && !isArray(obj))
-        || (!isArray(stateVal) && isArray(obj))
-        || (isBoundState(obj) && stateId !== guid(obj))) {
-        obj = createRealObj(stateVal);
-    }
+    obj = createRealObj(state, obj);
 
     var mapper = getBoundMapper(obj);
     if (!mapper) {
         mapper = new Mapper(store, state, immutable);
-        mapper.bind(obj);
+        mapper.bind(obj, rootObj || obj);
     } else {
-        store.cache.put(obj);
-        mapper.update(state, obj);
+        mapper.update(state, obj, rootObj || obj);
     }
-    mapper.observe(obj);
-
     return obj;
 }
 
 /**
  * @param {Object} store
- * @param {Object} [state] If no specified, map the root state.
+ * @param {Immutable} [newState]
+ * @param {Immutable} [oldState]
  * @param {*} [obj] The target of state mapping.
  * @param {Boolean} [immutable=true]
  * @return {*} Type depends on `state`.
  */
-export default function (store, state, obj, immutable = true) {
+export default function (store, newState, oldState, obj, immutable = true) {
     if (isBoolean(obj)) {
         immutable = obj;
         obj = undefined;
-    } else if (isBoolean(state)) {
-        immutable = state;
+    } else if (isBoolean(newState)) {
+        immutable = newState;
         obj = undefined;
-        state = undefined;
+        newState = undefined;
+        oldState = undefined;
     }
 
-    if (!state) {
-        state = store.getState();
+    if (!newState) {
+        newState = store.getState();
     }
+    // TODO Compare new and old, then update the differences.
 
-    var mapper = getBoundMapper(obj);
-    // NOTE: If `obj` is bound to the same state (has the same guid with the specified),
-    // just return, the properties of `obj` will be updated in mapper's subscription callback.
-    // Otherwise, bind the specified state to a new object.
-    if (mapper && mapper.state.is(state)) {
-        return obj;
-    } else {
-        return mapStateToObj(store, state, obj, immutable, false);
-    }
+    return mapStateToObj(store, newState, obj, obj, immutable);
 }

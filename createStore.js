@@ -1,3 +1,5 @@
+import invariant from 'invariant';
+
 import {
     createStore
 } from 'redux';
@@ -8,34 +10,45 @@ import {
     REDUX_MODELIZAR_NAMESPACE
 } from './namespace';
 import forEach from './utils/forEach';
-import guid from './utils/guid';
-import isPrimitive from './utils/isPrimitive';
-import {
-    createState,
-    isState
-} from './state';
+import Immutable, {
+    isFunction,
+    isObject
+} from '../immutable';
 import {
     mapper
 } from './mapper/reducer';
 import mapState from './mapper/mapState';
+import {
+    registerFunction,
+    getFunctionName
+} from './object/functions';
 
 export const REDUX_MODELIZAR_MUTATION_BATCH = REDUX_MODELIZAR_NAMESPACE + '/MUTATION_BATCH';
 
 function modelizar(reducer) {
-    return function mutation(state, action = {}) {
-        if (!isState(state)) {
-            state = createState(state);
+    var immutableOptions = {
+        toPlain: (obj) => {
+            if (isFunction(obj)) {
+                return {$fn: getFunctionName(obj)};
+            } else {
+                return Object.assign({$class: getFunctionName(obj.constructor)}, obj);
+            }
         }
+    };
+
+    return function mutation(state, action = {}) {
+        state = Immutable.create(state, immutableOptions);
 
         switch (action.type) {
             case REDUX_MODELIZAR_MUTATION_BATCH:
                 action.actions.forEach((action) => {
                     state = mutation(state, action);
                 });
-                return state;
+                break;
             default:
-                return reducer(state, action);
+                state = reducer(state, action);
         }
+        return Immutable.create(state, immutableOptions);
     };
 }
 
@@ -46,7 +59,7 @@ export default function (reducer, preloadedState, enhancer) {
     var store = createStore(...args);
     var batching = false;
     var actions = [];
-    var {dispatch, getState, subscribe} = store;
+    var {dispatch, getState} = store;
 
     function startBatch() {
         actions = [];
@@ -68,100 +81,46 @@ export default function (reducer, preloadedState, enhancer) {
         }
     }
 
-    // NOTE: One state can be mapped to only one object.
-    const mappingCache = {};
-    const cache = {
-        put: (obj) => {
-            if (!isPrimitive(obj)) {
-                mappingCache[guid(obj)] = obj;
-            }
-        },
-        remove: (obj) => {
-            if (!isPrimitive(obj)) {
-                delete mappingCache[guid(obj)];
-            }
-        },
-        get: (id) => {
-            return mappingCache[id];
-        },
-        has: (id) => {
-            return id in mappingCache;
-        },
-        cached: (obj) => {
-            return !isPrimitive(obj) && cache.has(guid(obj));
-        }
-    };
-
-    const mutationListeners = {};
-    subscribe(() => {
-        Object.keys(mutationListeners).map((stateId) => {
-            var mutationListener = mutationListeners[stateId];
-            return {
-                id: stateId,
-                state: mutationListener.state,
-                path: getState().path(stateId),
-                listeners: mutationListener.listeners.slice()
-            };
-        }).sort((a, b) => {
-            // Descending order for triggering listeners from bottom to top.
-            return a.path === null || b.path === null
-                ? 1
-                : b.path.length - a.path.length;
-        }).forEach(({id, state, path, listeners}) => {
-            var newState = getState().get(path);
-
-            if (!newState.same(state)) {
-                mutationListeners[id].state = newState;
-                forEach(listeners, (listener) => {
-                    listener(newState, state);
-                });
-            }
-            // Remove all listeners if state doesn't exist already.
-            if (!path) {
-                delete mutationListeners[id];
-            }
-        });
-    });
-
     return {
         ...store,
+        registerFunction: registerFunction,
         dispatch: (action) => {
-            return dispatch(action);
-        },
-        subscribe: (state, listener) => {
-            if (state instanceof Function) {
-                listener = state;
-                state = getState();
-            }
-            // NOTE: This way will be faster than subscribing listener for every state.
-            var stateId = guid(state.valueOf());
-            if (!mutationListeners[stateId]) {
-                mutationListeners[stateId] = {
-                    state: state,
-                    listeners: [listener]
-                };
+            if (batching) {
+                actions.push(action);
+                return action;
             } else {
-                mutationListeners[stateId].listeners.push(listener);
+                return dispatch(action);
             }
-
-            return () => {
-                var listeners = mutationListeners[stateId].listeners;
-                var index = listeners.indexOf(listener);
-                index >= 0 && listeners.splice(index, 1);
-            };
         },
         /**
-         * @param {Object} [state] If no specified, map the root state.
+         * @param {Immutable} [state] If no specified, map the root state.
          * @param {Boolean} [immutable=true]
          * @return {*} Type depends on `state`.
          */
         mapping: function (state, immutable = true) {
             if (isBoolean(state)) {
                 immutable = state;
-                state = undefined;
+                state = getState();
             }
+            invariant(
+                Immutable.isImmutable(state),
+                `Expected the parameter "state" is an Immutable or primitive object. But, received '${state}'.`
+            );
 
-            return mapState({...this, cache}, state, immutable);
+            var currentState = state;
+            var target = mapState({...this}, currentState, null, immutable);
+
+            if (isObject(target)) {
+                this.subscribe(() => {
+                    var previousState = currentState;
+                    currentState = getState().get(getState().path(state));
+
+                    if (currentState && !Immutable.equals(currentState, previousState)) {
+                        mapState({...this}, currentState, previousState, target, immutable);
+                    }
+                });
+            }
+            return target;
         },
         /**
          * @param {Object} target
@@ -179,17 +138,16 @@ export default function (reducer, preloadedState, enhancer) {
                 forEach(mapping, (getter, prop) => {
                     var previous = previousState && getter(previousState);
                     var current = currentState && getter(currentState);
-                    if (current && current.same(previous)) {
+                    if (Immutable.equals(current, previous)) {
                         return;
                     }
 
                     if (current) {
-                        target[prop] = mapState({...this, cache}, current, target[prop], immutable);
+                        target[prop] = mapState({...this}, current, previous, target[prop], immutable);
                     } else {
                         target[prop] = current;
                     }
                 });
-
                 return bind;
             };
             // Trigger first binding.
