@@ -1,3 +1,5 @@
+import {extractPath} from '../../immutable';
+
 import {
     MUTATE_STATE,
     REMOVE_SUB_STATE
@@ -5,16 +7,21 @@ import {
 
 export function mapper(reducer) {
     return (state, action = {}) => {
-        var path;
         switch (action.type) {
             case MUTATE_STATE:
-                path = state.path(action.state);
-                return path ? state.set(path.concat(action.key), action.value) : state;
             case REMOVE_SUB_STATE:
-                path = state.path(action.state);
-                return path ? state.remove(path.concat(action.key)) : state;
+                var path = state.path(action.state);
+                if (path) {
+                    var subPath = extractPath(action.key);
+                    path = path.concat(subPath);
+                    state = action.type === REMOVE_SUB_STATE
+                        ? state.remove(path)
+                        : state.set(path, action.value);
+                }
+                break;
             default:
-                return reducer(state, action);
+                state = reducer(state, action);
         }
+        return state;
     };
 }

@@ -11,7 +11,7 @@ export const REMOVE_SUB_STATE = REDUX_MODELIZAR_NAMESPACE + '/mapper/REMOVE_SUB_
  * Add value to new property or set new value to existing property.
  *
  * @param {Object/String} state {@link Immutable} object or GUID of object.
- * @param {String[]} key
+ * @param {String[]/String} key Path array or string which is split by `.`.
  * @param {*} value
  */
 export function mutateState(state, key, value) {
@@ -27,7 +27,7 @@ export function mutateState(state, key, value) {
  * Remove the existing property.
  *
  * @param {Object/String} state {@link Immutable} object or GUID of object.
- * @param {String[]} key
+ * @param {String[]/String} key Path array or string which is split by `.`.
  */
 export function removeSubState(state, key) {
     return {

@@ -5,10 +5,10 @@ import isBoolean from 'lodash/isBoolean';
 import Immutable, {
     getNodeByPath,
     isConfigurable,
-    isWritable
+    isWritable,
+    hasOwn
 } from '../../immutable';
 
-import forEach from '../utils/forEach';
 import instance from '../utils/instance';
 
 import {
@@ -22,6 +22,7 @@ import {
 import {
     mutateState
 } from './actions';
+import {notifyDep} from './observe';
 
 /**
  *         <------------[reflect]-------------
@@ -29,12 +30,12 @@ import {
  *         --[bind]--> (Mapper) --[connect]-->
  *
  * NOTE: An object only can map the different statuses of the same state.
- * Immutable state instances will have the same guid
- * if they represent the same state.
+ * Immutable state instances will have the same GUID if they represent the same state.
  */
 function Mapper(store, state, immutable) {
     this.store = store;
     this.state = state;
+    this.obj = null;
     this.immutable = immutable !== false;
     this.updating = false;
 }
@@ -51,21 +52,24 @@ Mapper.prototype.connect = function (state) {
  * @param {Object} root
  */
 Mapper.prototype.bind = function (obj, root) {
-    if (isBoundState(obj)) {
+    if (this.obj || isBoundState(obj)) {
         return;
     }
     reflectProto(obj, this);
+
+    this.obj = obj;
 
     var reservedKeys = ['$fn', '$class'];
     var state = this.state;
     state.keys()
          .filter((key) => reservedKeys.indexOf(key) < 0)
          .forEach((key) => {
-             this.mapping(state, obj, key, root);
+             this.mapping(state, key, root);
          });
 };
 
-Mapper.prototype.mapping = function (state, obj, prop, root) {
+Mapper.prototype.mapping = function (state, prop, root) {
+    var obj = this.obj;
     if (!isConfigurable(obj, prop)) {
         return;
     }
@@ -74,6 +78,7 @@ Mapper.prototype.mapping = function (state, obj, prop, root) {
     var getter = property && property.get;
     var setter = property && property.set;
 
+    var isWritableProp = isWritable(obj, prop);
     var propVal = mapStateToObj(this.store, state.get([prop]), obj[prop], root, this.immutable);
 
     Object.defineProperty(obj, prop, {
@@ -93,7 +98,7 @@ Mapper.prototype.mapping = function (state, obj, prop, root) {
                                 + ' please do this in it\'s prototype methods.');
             }
 
-            if (propVal === newVal) {
+            if (!isWritableProp || propVal === newVal) {
                 return;
             }
 
@@ -107,8 +112,7 @@ Mapper.prototype.mapping = function (state, obj, prop, root) {
     });
 };
 
-var toMap = (result, key) => (result[key] = true) && result;
-Mapper.prototype.update = function (newState, obj, root) {
+Mapper.prototype.update = function (newState, root) {
     var store = this.store;
     var oldState = this.state;
     if (this.updating
@@ -118,8 +122,10 @@ Mapper.prototype.update = function (newState, obj, root) {
     }
     this.connect(newState);
 
-    var oldStateKeys = oldState.keys().reduce(toMap, {});
-    var newStateKeys = newState.keys().reduce(toMap, {});
+    var obj = this.obj;
+
+    var oldStateKeys = oldState.keys().sort();
+    var newStateKeys = newState.keys().sort();
     if (newState.isArray()) {
         var oldSize = oldState.size();
         var newSize = newState.size();
@@ -128,27 +134,29 @@ Mapper.prototype.update = function (newState, obj, root) {
             Array.prototype.splice.call(obj, newSize, oldSize - newSize);
         } else if (oldSize < newSize) {
             for (var i = oldSize; i < newSize; i++) {
-                this.mapping(newState, obj, i, root);
+                if (hasOwn(newState, i)) {
+                    this.mapping(newState, i, root);
+                }
             }
         }
     } else {
         // Remove redundant properties.
-        forEach(oldStateKeys, (existing, key) => {
-            if (!newStateKeys[key] && isConfigurable(obj, key)) {
+        oldStateKeys.forEach((key) => {
+            if (!hasOwn(newState, key) && isConfigurable(obj, key)) {
                 delete obj[key];
             }
         });
         // Bind new properties to `obj`
-        forEach(newStateKeys, (existing, key) => {
-            if (!oldStateKeys[key]) {
-                this.mapping(newState, obj, key, root);
+        newStateKeys.forEach((key) => {
+            if (!hasOwn(oldState, key)) {
+                this.mapping(newState, key, root);
             }
         });
     }
 
+    this.updating = true;
     try {
-        this.updating = true;
-        forEach(newStateKeys, (existing, key) => {
+        newStateKeys.forEach((key) => {
             var oldSubState = oldState.get([key]);
             var newSubState = newState.get([key]);
 
@@ -156,6 +164,7 @@ Mapper.prototype.update = function (newState, obj, root) {
                 obj[key] = mapStateToObj(store, newSubState, obj[key], root, this.immutable);
             }
         });
+        notifyDep(obj);
     } finally {
         this.updating = false;
     }
@@ -197,18 +206,13 @@ function mapStateToObj(store, state, obj, rootObj, immutable) {
     if (!Immutable.isInstance(state)) {
         return state;
     } else if (state.isCycleRef()) {
-        var refObjPath = store.getState().path(state.valueOf());
-        var realRootPath = store.getState().path(rootObj);
-        for (let i = 0; i < realRootPath; i++) {
-            invariant(
-                /* eslint-disable eqeqeq */
-                realRootPath[i] == refObjPath[i],
-                /* eslint-enable eqeqeq */
-                'The cycle reference object isn\'t in the same root.'
-            );
-        }
+        var subPath = store.getState().subPath(rootObj, state.valueOf());
+        invariant(
+            subPath,
+            'The cycle reference object isn\'t sub node of the root object.'
+        );
 
-        return getNodeByPath(rootObj, refObjPath.slice(realRootPath.length));
+        return getNodeByPath(rootObj, subPath);
     } else if (state.isRegExp()) {
         return parseRegExp(state.valueOf());
     } else if (state.$fn) {
@@ -217,12 +221,13 @@ function mapStateToObj(store, state, obj, rootObj, immutable) {
 
     obj = createRealObj(state, obj);
 
+    var root = rootObj || obj;
     var mapper = getBoundMapper(obj);
     if (!mapper) {
         mapper = new Mapper(store, state, immutable);
-        mapper.bind(obj, rootObj || obj);
+        mapper.bind(obj, root);
     } else {
-        mapper.update(state, obj, rootObj || obj);
+        mapper.update(state, root);
     }
     return obj;
 }

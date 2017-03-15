@@ -76,39 +76,44 @@ export function reflectProto(obj, mapper) {
               });
     } else {
         methods = getMethodsUntilBase(cls);
-        Object.keys(methods).forEach((name) => {
-            var callback = methods[name];
-            methods[name] = function batchMutate() {
+        Object.keys(methods).forEach((method) => {
+            var original = obj[method];
+            methods[method] = function batchMutate() {
                 var mapper = getBoundMapper(this);
                 var store = mapper.store;
                 var args = [...arguments];
 
                 return store.doBatch(() => {
-                    return callback.apply(this, args);
+                    return original.apply(this, args);
                 }, {
-                    method: `${cls.name}$${name}`
+                    method: `${cls.name}$${method}`
                 });
             };
         });
+        Object.assign(methods, {
+            /**
+             * @param {String[]/String} prop e.g. `['a', 'b', '1']` or `'a.b[1]'`
+             * @param {*} value
+             */
+            $set: function (prop, value) {
+                // Trigger mapper.update() to add new property.
+                mapper.store.dispatch(mutateState(obj, prop, value));
+            },
+            /**
+             * @param {String[]/String} prop e.g. `['a', 'b', '1']` or `'a.b[1]'`
+             */
+            $remove: function (prop) {
+                // Trigger mapper.update() to remove property.
+                mapper.store.dispatch(removeSubState(obj, prop));
+            }
+        });
     }
 
-    var $set = obj.$set;
-    var $remove = obj.$remove;
     Object.assign(methods, {
-        [PROP_STATE_MAPPER]: mapper,
-        $set: function (prop, value) {
-            // Trigger mapper.update() to add new property.
-            mapper.store.dispatch(mutateState(obj, prop, value));
-            $set && $set.call(obj, prop, value);
-        },
-        $remove: function (prop) {
-            // Trigger mapper.update() to remove property.
-            mapper.store.dispatch(removeSubState(obj, prop));
-            $remove && $remove.call(obj, prop);
-        }
+        [PROP_STATE_MAPPER]: mapper
     });
 
-    var proto = Object.create(cls.prototype, createNE(methods));
+    var proto = Object.create(Object.getPrototypeOf(obj), createNE(methods));
     Object.setPrototypeOf(obj, proto);
 
     return obj;

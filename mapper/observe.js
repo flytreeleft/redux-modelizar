@@ -1,17 +1,18 @@
-import isPrimitive from '../utils/isPrimitive';
+import {
+    isPrimitive,
+    hasOwn
+} from '../../immutable';
 
 export const PROP_OBSERVER = '__ob__';
 
 export function isObserved(obj) {
-    return !isPrimitive(obj) && obj.hasOwnProperty(PROP_OBSERVER);
+    return !isPrimitive(obj) && hasOwn(obj, PROP_OBSERVER);
 }
 
 export function observeCheck(obj) {
     if (isObserved(obj)) {
         var ob = obj[PROP_OBSERVER];
-        var items = Object.keys(obj).map((key) => {
-            return obj[key];
-        });
+        var items = Object.keys(obj).map((key) => obj[key]);
 
         ob.observeArray(items);
     }
