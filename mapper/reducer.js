@@ -10,7 +10,7 @@ export function mapper(reducer) {
         switch (action.type) {
             case MUTATE_STATE:
             case REMOVE_SUB_STATE:
-                var path = state.path(action.state);
+                var path = state.path(action.$target);
                 if (path) {
                     var subPath = extractPath(action.key);
                     path = path.concat(subPath);
