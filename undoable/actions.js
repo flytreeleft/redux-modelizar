@@ -1,13 +1,13 @@
 import {
-    REDUX_MODELIZAR_UNDOABLE_NAMESPACE
+    REDUX_MODELIZAR_UNDOABLE
 } from './namespace';
 
-export const UNDOABLE_INIT = REDUX_MODELIZAR_UNDOABLE_NAMESPACE + '/UNDOABLE_INIT';
-export const UNDOABLE_UNDO = REDUX_MODELIZAR_UNDOABLE_NAMESPACE + '/UNDOABLE_UNDO';
-export const UNDOABLE_REDO = REDUX_MODELIZAR_UNDOABLE_NAMESPACE + '/UNDOABLE_REDO';
-export const UNDOABLE_CLEAR = REDUX_MODELIZAR_UNDOABLE_NAMESPACE + '/UNDOABLE_CLEAR';
-export const UNDOABLE_START_BATCH = REDUX_MODELIZAR_UNDOABLE_NAMESPACE + '/UNDOABLE_START_BATCH';
-export const UNDOABLE_END_BATCH = REDUX_MODELIZAR_UNDOABLE_NAMESPACE + '/UNDOABLE_END_BATCH';
+export const UNDOABLE_INIT = REDUX_MODELIZAR_UNDOABLE + '/INIT';
+export const UNDOABLE_UNDO = REDUX_MODELIZAR_UNDOABLE + '/UNDO';
+export const UNDOABLE_REDO = REDUX_MODELIZAR_UNDOABLE + '/REDO';
+export const UNDOABLE_CLEAR = REDUX_MODELIZAR_UNDOABLE + '/CLEAR';
+export const UNDOABLE_START_BATCH = REDUX_MODELIZAR_UNDOABLE + '/START_BATCH';
+export const UNDOABLE_END_BATCH = REDUX_MODELIZAR_UNDOABLE + '/END_BATCH';
 
 export function init(target) {
     return {
@@ -16,19 +16,19 @@ export function init(target) {
     };
 }
 
-export function undo(target, total) {
+export function undo(target, count) {
     return {
         type: UNDOABLE_UNDO,
         $target: target,
-        total
+        count
     };
 }
 
-export function redo(target, total) {
+export function redo(target, count) {
     return {
         type: UNDOABLE_REDO,
         $target: target,
-        total
+        count
     };
 }
 

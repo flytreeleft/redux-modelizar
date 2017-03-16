@@ -1,4 +1,7 @@
-import guid from '../utils/guid';
+import {
+    guid,
+    isPrimitive
+} from '../../immutable';
 
 function deepEqualState(oldState, newState) {
     // NOTE: The reference will be changed
@@ -86,43 +89,45 @@ function deepMerge(oldState, newState) {
 }
 
 function undoableState(state, options) {
-    if (!options.independent) {
-        return state;
-    }
-
-    var newState = state.set('valueOf', () => {
-        var target = guid(state.valueOf());
-        var present = histories[target].present;
-        return present === newState ? state.valueOf() : present.valueOf();
-    });
-    return newState;
+    return state;
+    // if (!options.independent) {
+    //     return state;
+    // }
+    //
+    // var newState = state.set('valueOf', () => {
+    //     var target = guid(state.valueOf());
+    //     var present = histories[target].present;
+    //     return present === newState ? state.valueOf() : present.valueOf();
+    // });
+    // return newState;
 }
 
 // `{target: history}` map
 // TODO Record `action.type`
-var histories = {};
+const histories = {};
 
 // WARNING: Never change the parameter which is an Object!
 
 /**
- * Invoke this method at any time you need using `history`.
+ * Get history record copies of `target`.
  */
 export function getHistory(target) {
-    var id = guid(target);
+    var id = isPrimitive(target) ? target : guid(target);
     var history = histories[id];
 
     return history ? {
         timestamp: history.timestamp,
-        undoes: history.past.slice(),
-        redoes: history.future.slice(),
-        isBatching: history.isBatching
+        undoes: history.past.concat(),
+        redoes: history.future.concat(),
+        batching: history.batching
     } : null;
 }
 
 /**
  * @param {Object} state The state of model.
  */
-export function init(state, action, options = {}) {
+export function init(state, action = {}, options = {}) {
+    // NOTE: The cycle reference should not become a histories owner.
     var target = guid(state.valueOf());
     if (!target || histories[target]) {
         return state;
@@ -134,7 +139,7 @@ export function init(state, action, options = {}) {
         future: [],
         present: present,
         past: [],
-        isBatching: false,
+        batching: false,
         options: options
     };
 
@@ -151,25 +156,25 @@ export function insert(state, action) {
     }
 
     var history = histories[target];
-    var options = history.options;
-    var present = history.present;
-    var equals = options.deep ? deepEqualState : shallowEqualState;
-    if (equals(present, state)) {
+    var batching = history.batching;
+    if (batching) {
         return state;
     }
 
+    var options = history.options;
+    var present = history.present;
     var hist = {
         timestamp: history.timestamp,
-        future: history.future.slice(),
+        future: history.future.concat(),
         present: present,
-        past: history.past.slice()
+        past: history.past.concat()
     };
     if (options.filter && !options.filter(action, state, hist)) {
         return state;
     }
 
-    var isBatching = history.isBatching;
-    if (isBatching) {
+    var equals = options.deep ? deepEqualState : shallowEqualState;
+    if (equals(present, state)) {
         return state;
     }
 
@@ -193,7 +198,7 @@ export function insert(state, action) {
 export function undo(state, action = {}) {
     var target = guid(action.$target);
     if (!target || !histories[target]
-        || !state.is(action.$target)) {
+        || !state.same(action.$target)) {
         return state;
     }
 
@@ -202,8 +207,8 @@ export function undo(state, action = {}) {
     var present = history.present;
     var future = history.future;
     var past = history.past;
-    var total = Math.max(1, action.total || 1);
-    var index = past.length - Math.min(total, past.length);
+    var count = Math.max(1, action.count || 1);
+    var index = past.length - Math.min(count, past.length);
     var undoes = past.slice(index).concat([present]);
 
     history.present = present = undoes.shift();
@@ -218,7 +223,7 @@ export function undo(state, action = {}) {
 export function redo(state, action = {}) {
     var target = guid(action.$target);
     if (!target || !histories[target]
-        || !state.is(action.$target)) {
+        || !state.same(action.$target)) {
         return state;
     }
 
@@ -227,8 +232,8 @@ export function redo(state, action = {}) {
     var present = history.present;
     var past = history.past;
     var future = history.future;
-    var total = Math.max(1, action.total || 1);
-    var index = Math.min(total, future.length);
+    var count = Math.max(1, action.count || 1);
+    var index = Math.min(count, future.length);
     var redoes = [present].concat(future.slice(0, index));
 
     history.present = present = redoes.pop();
@@ -243,7 +248,7 @@ export function redo(state, action = {}) {
 export function clear(state, action = {}) {
     var target = guid(action.$target);
     if (!target || !histories[target]
-        || !state.is(action.$target)) {
+        || !state.same(action.$target)) {
         return state;
     }
 
@@ -257,12 +262,12 @@ export function clear(state, action = {}) {
 export function startBatch(state, action = {}) {
     var target = guid(action.$target);
     if (!target || !histories[target]
-        || !state.is(action.$target)) {
+        || !state.same(action.$target)) {
         return state;
     }
 
     var history = histories[target];
-    history.isBatching = true;
+    history.batching = true;
 
     return state;
 }
@@ -270,12 +275,12 @@ export function startBatch(state, action = {}) {
 export function endBatch(state, action = {}) {
     var target = guid(action.$target);
     if (!target || !histories[target]
-        || !state.is(action.$target)) {
+        || !state.same(action.$target)) {
         return state;
     }
 
     var history = histories[target];
-    history.isBatching = false;
+    history.batching = false;
 
     // Add the final state to history
     return insert(state, action);

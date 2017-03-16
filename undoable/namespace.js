@@ -1,5 +1,5 @@
 import {
-    REDUX_MODELIZAR_NAMESPACE
+    REDUX_MODELIZAR
 } from '../namespace';
 
-export const REDUX_MODELIZAR_UNDOABLE_NAMESPACE = REDUX_MODELIZAR_NAMESPACE + '/undoable';
+export const REDUX_MODELIZAR_UNDOABLE = REDUX_MODELIZAR + '/undoable';

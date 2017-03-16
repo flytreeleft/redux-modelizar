@@ -1,5 +1,3 @@
-import defaults from 'lodash/defaults';
-
 import {
     UNDOABLE_INIT,
     UNDOABLE_UNDO,
@@ -19,14 +17,11 @@ import {
 } from './reducer';
 
 /**
- * 约束：
- * - `undoable`只能应用在更新某个model的reducer上，传入的`state`将被视为model的状态；
- * - 不支持集合类型；
  * Reference:
  * - [Redux undo](https://github.com/omnidan/redux-undo);
  */
 export default function undoable(reducer, options = {}) {
-    options = defaults({}, options, {
+    options = Object.assign({}, {
         // Only add to history if return `true`
         filter: (action, currentState, previousHistory) => true,
         debug: false,
@@ -43,12 +38,12 @@ export default function undoable(reducer, options = {}) {
         // the independent history's present state.
         // NOTE: The top history should always keep `independent` to `false`.
         independent: false
-    });
+    }, options);
 
     return (state, action = {}) => {
         switch (action.type) {
             case UNDOABLE_INIT:
-                // NOTE: Dispatch `UNDOABLE_INIT` when binding history to model.
+                // NOTE: Dispatch `UNDOABLE_INIT` when binding history to object.
                 // see `./bindHistory.js`.
                 return init(state, action, options);
             case UNDOABLE_UNDO:
