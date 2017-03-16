@@ -1,4 +1,4 @@
-import createState, {isState} from './state/createState';
+import Immutable from '../immutable';
 
 // https://github.com/arqex/freezer-redux-devtools
 // https://github.com/gaearon/redux-devtools
@@ -11,13 +11,13 @@ export default function enableReduxDevTools() {
         // Adapt to Redux Dev Tools v2.12+
         serialize: {
             // Convert to JSON object
-            replacer: (key, value) => isState(value) ? value.valueOf() : value,
+            replacer: (key, value) => value,
             // Convert to State object
-            reviver: (key, value) => isState(value) ? value : createState(value)
+            reviver: (key, value) => Immutable.isImmutable(value) ? value : Immutable.create(value)
         },
         // NOTE: In the latest version, (de)serializeState are replaced by serialize
         // See https://github.com/zalmoxisus/redux-devtools-extension/blob/master/docs/API/Arguments.md
-        deserializeState: (state) => isState(state) ? state : createState(state),
-        serializeState: (key, value) => isState(value) ? value.valueOf() : value
+        deserializeState: (state) => Immutable.isImmutable(state) ? state : Immutable.create(state),
+        serializeState: (key, value) => value
     }) : (f) => f;
 }

@@ -4,6 +4,9 @@ import {
 
 import isArray from 'lodash/isArray';
 
+/**
+ * Override `compose` of `redux` to support to pass array argument.
+ */
 export default function () {
     var args = [...arguments];
 
