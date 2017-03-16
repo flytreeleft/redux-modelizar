@@ -1,8 +1,9 @@
 import {
-    REDUX_MODELIZAR_NAMESPACE
+    REDUX_MODELIZAR
 } from '../namespace';
 
-export const MODEL_STATE_MUTATE = REDUX_MODELIZAR_NAMESPACE + '/MODEL_STATE_MUTATE';
+export const MODEL_STATE_MUTATE = REDUX_MODELIZAR + '/MODEL_STATE_MUTATE';
+export const BATCH_MUTATE = REDUX_MODELIZAR + '/BATCH_MUTATE';
 
 export function mutateState(target, patch, method) {
     return {
@@ -10,5 +11,13 @@ export function mutateState(target, patch, method) {
         method,
         $target: target,
         $patch: patch
+    };
+}
+
+export function batchMutateState(actions, meta) {
+    return {
+        type: BATCH_MUTATE,
+        meta,
+        actions
     };
 }

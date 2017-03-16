@@ -1,15 +1,12 @@
-import isArray from 'lodash/isArray';
-import isObject from 'lodash/isObject';
-
-import traverse from '../object/traverse';
-import forEach from '../utils/forEach';
 import {
-    parseObjClass
-} from '../object/sentinels';
+    extractPath,
+    isObject
+} from '../../immutable';
 
 import {
-    MODEL_STATE_MUTATE
-} from './actions';
+    MUTATE_STATE,
+    REMOVE_SUB_STATE
+} from '../mapper/actions';
 import undoable from '../undoable';
 import {
     getHistory
@@ -21,9 +18,10 @@ import {
 const emptyReducer = (state, action) => state;
 // undoable undo/redo/batching/clear时会指定目标，通过目标找到path并调用undoable更新该目标的状态
 // undoable insert仅在有更新时发生，其仅需拦截更新path上的节点即可
+// TODO 将注册函数传进来
 function undoableMutate(state, action = {}, filter = () => false, rootState) {
     var target = state.valueOf();
-    var opts = filter(state, action, parseObjClass(target));
+    var opts = filter(state, action);
 
     if (opts) {
         opts = isObject(opts) ? opts : {};
@@ -41,98 +39,23 @@ function undoableMutate(state, action = {}, filter = () => false, rootState) {
     }
 }
 
-const compare = {
-    /** Ascending order */
-    numerically: function (a, b) {
-        return a - b;
-    },
-    /** Ascending order */
-    numericallyBy: function (name) {
-        return function (a, b) {
-            return a[name] - b[name];
-        };
-    }
-};
-function mutate(state, action) {
-    var newState = state;
-    var refs = new Map([[action.$patch, []]]);
-    traverse(action.$patch, (delta, deltaTop, prop) => {
-        if (deltaTop === undefined || (prop === '_t' && delta === 'a')) {
-            return;
-        }
-
-        var paths = refs.get(deltaTop).concat([prop]);
-        if (!isArray(delta)) {
-            if (delta._t === 'a') {
-                var toRemove = [];
-                var toInsert = [];
-                forEach(delta, (delta, key) => {
-                    if (key !== '_t') {
-                        if (key[0] === '_') {
-                            var index = parseInt(key.slice(1), 10);
-                            toRemove.push(index);
-                            if (delta[2] === 3) { // moving
-                                toInsert.push({
-                                    index: delta[1],
-                                    source: index
-                                });
-                            }
-                        } else if (delta.length === 1) { // insertion
-                            toInsert.push({
-                                index: parseInt(key, 10)
-                            });
-                        }
-                        // Element changing will be processed in next traversing.
-                    }
-                });
-                // Removing elements by descending order to avoid sawing our own floor.
-                // NOTE: Using `.remove` maybe faster than using `.filter`
-                // when the state contains huge number data.
-                toRemove.sort(compare.numerically).reverse().forEach((index) => {
-                    newState = newState.remove(paths.concat([index]));
-                });
-                // Inserting new elements by ascending order.
-                toInsert.sort(compare.numericallyBy('index')).forEach((insertion) => {
-                    var index = insertion.index;
-                    var el;
-                    if (insertion.source === undefined) { // insertion
-                        el = delta[index][0];
-                    } else { // moving
-                        var srcPaths = paths.concat([insertion.source]);
-                        el = state.get(srcPaths);
-                    }
-                    newState = newState.update(paths, (state) => {
-                        return state.insert(index, [el]);
-                    });
-                });
-            }
-
-            refs.set(delta, paths);
-            return;
-        }
-
-        // Object property removing, adding or changing.
-        if (deltaTop._t !== 'a') {
-            if (delta.length <= 2) {
-                newState = newState.set(paths, delta[delta.length - 1]);
-            } else if (delta[2] === 0) {
-                newState = newState.remove(paths);
-            }
-        }
-        return false;
-    });
-    return newState;
-}
-
 export function mutation(state, action = {}, options = {}) {
-    var target = action.$target;
-    var path = state.path(target);
-    var rootState = state;
+    var path = state.path(action.$target);
+    if (!path) {
+        return state;
+    }
 
+    var rootState = state;
     switch (action.type) {
-        case MODEL_STATE_MUTATE:
+        case REMOVE_SUB_STATE:
+        case MUTATE_STATE:
+            var subPath = extractPath(action.key);
+
             return state.update(path, (state) => {
-                return mutate(state, action);
+                return action.type === REMOVE_SUB_STATE
+                    ? state.remove(subPath)
+                    // Make sure the cycle reference can be processed.
+                    : rootState.set(path.concat(subPath), action.value).get(path.concat(subPath));
             }, (state) => {
                 return undoableMutate(state, action, options.undoable, rootState);
             });
