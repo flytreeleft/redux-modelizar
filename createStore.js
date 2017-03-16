@@ -6,57 +6,28 @@ import {
 
 import isBoolean from 'lodash/isBoolean';
 
-import {
-    REDUX_MODELIZAR_NAMESPACE
-} from './namespace';
 import forEach from './utils/forEach';
+import {
+    registerFunction
+} from './object/functions';
+
 import Immutable, {
     isFunction,
     isObject
 } from '../immutable';
-import {
-    mapper
-} from './mapper/reducer';
 import mapState from './mapper/mapState';
-import {
-    registerFunction,
-    getFunctionName
-} from './object/functions';
+import modelizar from './modelizar';
+import {batchMutateState} from './modelizar/actions';
 
-export const REDUX_MODELIZAR_MUTATION_BATCH = REDUX_MODELIZAR_NAMESPACE + '/MUTATION_BATCH';
+export default function (reducer, preloadedState, enhancer, options) {
+    if (isFunction(preloadedState)) {
+        options = enhancer;
+        enhancer = preloadedState;
+        preloadedState = undefined;
+    }
+    reducer = modelizar(reducer, options || {});
 
-function modelizar(reducer) {
-    var immutableOptions = {
-        toPlain: (obj) => {
-            if (isFunction(obj)) {
-                return {$fn: getFunctionName(obj)};
-            } else {
-                return Object.assign({$class: getFunctionName(obj.constructor)}, obj);
-            }
-        }
-    };
-
-    return function mutation(state, action = {}) {
-        state = Immutable.create(state, immutableOptions);
-
-        switch (action.type) {
-            case REDUX_MODELIZAR_MUTATION_BATCH:
-                action.actions.forEach((action) => {
-                    state = mutation(state, action);
-                });
-                break;
-            default:
-                state = reducer(state, action);
-        }
-        return Immutable.create(state, immutableOptions);
-    };
-}
-
-export default function (reducer, preloadedState, enhancer) {
-    var args = [...arguments];
-    args[0] = modelizar(mapper(reducer));
-
-    var store = createStore(...args);
+    var store = createStore(reducer, preloadedState, enhancer);
     var batching = false;
     var actions = [];
     var {dispatch, getState} = store;
@@ -67,17 +38,13 @@ export default function (reducer, preloadedState, enhancer) {
     }
 
     function doBatch(meta) {
-        var action = {
-            type: REDUX_MODELIZAR_MUTATION_BATCH,
-            meta,
-            actions: [].concat(actions)
-        };
+        var savedActions = actions.concat();
 
         batching = false;
         actions = [];
         // Do mutation even if error happened.
-        if (action.actions.length > 0) {
-            dispatch(action);
+        if (savedActions.length > 0) {
+            dispatch(batchMutateState(savedActions, meta));
         }
     }
 
@@ -115,6 +82,7 @@ export default function (reducer, preloadedState, enhancer) {
                     var previousState = currentState;
                     currentState = getState().get(getState().path(state));
 
+                    // NOTE: If the mapped state doesn't exist, no need to update the mapping object.
                     if (currentState && !Immutable.equals(currentState, previousState)) {
                         mapState({...this}, currentState, previousState, target, immutable);
                     }
