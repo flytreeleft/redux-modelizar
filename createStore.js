@@ -8,7 +8,8 @@ import isBoolean from 'lodash/isBoolean';
 
 import forEach from './utils/forEach';
 import {
-    registerFunction
+    registerFunction,
+    getFunctionByName
 } from './object/functions';
 
 import Immutable, {
@@ -25,9 +26,13 @@ export default function (reducer, preloadedState, enhancer, options) {
         enhancer = preloadedState;
         preloadedState = undefined;
     }
-    reducer = modelizar(reducer, options || {});
+    var globalOpts = options || {};
+    var undoable = globalOpts.undoable;
+    globalOpts.debug = globalOpts.debug === true;
+    globalOpts.undoable = (state) => !!undoable
+                                     && undoable(state, getFunctionByName(state.$fn || state.$class));
 
-    var store = createStore(reducer, preloadedState, enhancer);
+    var store = createStore(modelizar(reducer, globalOpts), preloadedState, enhancer);
     var batching = false;
     var actions = [];
     var {dispatch, getState} = store;
@@ -50,6 +55,7 @@ export default function (reducer, preloadedState, enhancer, options) {
 
     return {
         ...store,
+        configure: globalOpts,
         registerFunction: registerFunction,
         dispatch: (action) => {
             if (batching) {
