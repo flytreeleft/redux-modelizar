@@ -1,4 +1,4 @@
-import {
+import Immutable, {
     guid,
     isPrimitive
 } from '../../immutable';
@@ -25,15 +25,17 @@ function shallowEqualState(oldState, newState) {
             return;
         }
 
-        var newS = newState.get(path);
-        if (oldS.isArray() && newS.isArray()
+        var newS = newState.get([path]);
+        if (oldS && newS
+            && oldS.isArray && newS.isArray
+            && oldS.isArray() && newS.isArray()
             && oldS.size() === newS.size()) {
             oldS.forEach((s, path) => {
-                equal = s.same(newS.get(path));
+                equal = Immutable.same(s, newS.get([path]));
                 return equal;
             });
         } else {
-            equal = oldS.same(newS);
+            equal = Immutable.same(oldS, newS);
         }
         return equal;
     });
@@ -54,29 +56,29 @@ function shallowEqualState(oldState, newState) {
  *   if the new one `is` the old one, return the old one;
  */
 function shallowMerge(oldState, newState, deep = true) {
-    if (!oldState || oldState.same(newState)) {
+    if (!Immutable.isInstance(oldState)
+        || !Immutable.isInstance(newState)
+        || Immutable.same(oldState, newState)) {
         return newState;
     }
 
     if (oldState.isArray() && newState.isArray()) {
         return newState.map((state, path) => {
             // Find exist value by guid
-            var exist = oldState.get(state.valueOf());
+            var exist = oldState.get(oldState.path(state.valueOf()));
 
             return exist.valueOf() !== undefined ? exist : state;
         });
-    } else if (oldState.isObject() && newState.isObject()) {
+    } else {
         return deep ? newState.map((state, path) => {
-            var old = oldState.get(path);
+            var old = oldState.get([path]);
 
-            if (old.same(state)) {
+            if (Immutable.same(old, state)) {
                 return old;
             } else {
                 return shallowMerge(old, state, false);
             }
         }) : oldState;
-    } else {
-        return newState;
     }
 }
 
@@ -248,7 +250,7 @@ export function redo(state, action = {}) {
 export function clear(state, action = {}) {
     var target = guid(action.$target);
     if (!target || !histories[target]
-        || !state.same(action.$target)) {
+        || !Immutable.same(state, action.$target)) {
         return state;
     }
 
@@ -262,7 +264,7 @@ export function clear(state, action = {}) {
 export function startBatch(state, action = {}) {
     var target = guid(action.$target);
     if (!target || !histories[target]
-        || !state.same(action.$target)) {
+        || !Immutable.same(state, action.$target)) {
         return state;
     }
 
@@ -275,7 +277,7 @@ export function startBatch(state, action = {}) {
 export function endBatch(state, action = {}) {
     var target = guid(action.$target);
     if (!target || !histories[target]
-        || !state.same(action.$target)) {
+        || !Immutable.same(state, action.$target)) {
         return state;
     }
 
