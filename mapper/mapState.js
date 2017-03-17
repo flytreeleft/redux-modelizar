@@ -6,6 +6,7 @@ import Immutable, {
     getNodeByPath,
     isConfigurable,
     isWritable,
+    isEnumerable,
     hasOwn
 } from '../../immutable';
 
@@ -72,7 +73,7 @@ Mapper.prototype.bind = function (obj, root) {
 
 Mapper.prototype.mapping = function (state, prop, root) {
     var obj = this.obj;
-    if (!isConfigurable(obj, prop)) {
+    if (!isConfigurable(obj, prop) || !isEnumerable(obj, prop)) {
         return;
     }
 
@@ -81,7 +82,9 @@ Mapper.prototype.mapping = function (state, prop, root) {
     var setter = property && property.set;
 
     var isWritableProp = isWritable(obj, prop);
-    var propVal = mapStateToObj(this.store, state.get([prop]), obj[prop], root, this.immutable);
+    var propVal = mapStateToObj(this.store, state.get([prop]), obj[prop], root, this.immutable, (val) => {
+        obj[prop] = val;
+    });
 
     Object.defineProperty(obj, prop, {
         enumerable: true,
@@ -163,7 +166,9 @@ Mapper.prototype.update = function (newState, root) {
             var newSubState = newState.get([key]);
 
             if (isWritable(obj, key) && !Immutable.equals(oldSubState, newSubState)) {
-                obj[key] = mapStateToObj(store, newSubState, obj[key], root, this.immutable);
+                obj[key] = mapStateToObj(store, newSubState, obj[key], root, this.immutable, (sub) => {
+                    obj[key] = sub;
+                });
             }
         });
         notifyDep(obj);
@@ -199,12 +204,12 @@ function createRealObj(state, realObj) {
             obj = {};
         }
     }
-    Immutable.guid(obj, Immutable.guid(state));
+    Immutable.guid(obj, Immutable.guid(state), false);
 
     return obj;
 }
 
-function mapStateToObj(store, state, obj, rootObj, immutable) {
+function mapStateToObj(store, state, obj, rootObj, immutable, cb) {
     if (!Immutable.isInstance(state)) {
         return state;
     } else if (state.isCycleRef()) {
@@ -222,6 +227,9 @@ function mapStateToObj(store, state, obj, rootObj, immutable) {
     }
 
     obj = createRealObj(state, obj);
+    // Do something (e.g. assignment `obj` to top object)
+    // before mapping `state` to `obj` deeply.
+    cb && cb(obj);
 
     var root = rootObj || obj;
     var mapper = getBoundMapper(obj);
