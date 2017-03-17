@@ -24,6 +24,8 @@ import {
 } from './actions';
 import {notifyDep} from './observe';
 
+import bindHistory from '../undoable/bindHistory';
+
 /**
  *         <------------[reflect]-------------
  * (Model)                                     (State)
@@ -228,6 +230,11 @@ function mapStateToObj(store, state, obj, rootObj, immutable) {
         mapper.bind(obj, root);
     } else {
         mapper.update(state, root);
+    }
+
+    // Bind history
+    if (store.configure.undoable(state)) {
+        bindHistory(store, obj, true);
     }
     return obj;
 }

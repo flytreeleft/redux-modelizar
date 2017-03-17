@@ -15,7 +15,7 @@ export function getFunctionName(fn) {
 export function getFunctionByName(fnName) {
     var fn = fnMap[fnName];
 
-    if (!fn) {
+    if (!fn && fnName) {
         var actualName = fnName.replace(/@\d+$/g, '');
         try {
             fn = (new Function(`return ${actualName};`))();

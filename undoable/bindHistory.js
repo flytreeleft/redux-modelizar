@@ -32,7 +32,7 @@ import {
  * - [Function] endBatch: `() => ()`, stop history batch recording.
  * ```
  */
-export default function bindHistory(store, obj) {
+export default function bindHistory(store, obj, immediate = false) {
     if (!isObject(obj) || obj.history) {
         return obj;
     }
@@ -78,5 +78,7 @@ export default function bindHistory(store, obj) {
             value: Object.freeze(history)
         }
     });
+    immediate && getLazyHistory(obj);
+
     return obj;
 }
