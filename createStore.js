@@ -9,7 +9,8 @@ import isBoolean from 'lodash/isBoolean';
 import forEach from './utils/forEach';
 import {
     registerFunction,
-    getFunctionByName
+    getFunctionByName,
+    getFunctionName
 } from './object/functions';
 
 import Immutable, {
@@ -20,19 +21,42 @@ import mapState from './mapper/mapState';
 import modelizar from './modelizar';
 import {batchMutateState} from './modelizar/actions';
 
+function immutable(reducer) {
+    var immutableOptions = {
+        toPlain: (obj) => {
+            if (isFunction(obj)) {
+                return {$fn: getFunctionName(obj)};
+            } else {
+                return Object.assign({$class: getFunctionName(obj.constructor)}, obj);
+            }
+        }
+    };
+
+    return (state, action) => {
+        state = Immutable.create(state, immutableOptions);
+
+        state = reducer(state, action);
+
+        return Immutable.create(state, immutableOptions);
+    };
+}
+
 export default function (reducer, preloadedState, enhancer, options) {
     if (isFunction(preloadedState)) {
         options = enhancer;
         enhancer = preloadedState;
         preloadedState = undefined;
     }
+
     var globalOpts = options || {};
     var undoable = globalOpts.undoable;
     globalOpts.debug = globalOpts.debug === true;
     globalOpts.undoable = (state) => !!undoable
                                      && undoable(state, getFunctionByName(state.$fn || state.$class));
 
-    var store = createStore(modelizar(reducer, globalOpts), preloadedState, enhancer);
+    reducer = immutable(modelizar(reducer, globalOpts));
+
+    var store = createStore(reducer, preloadedState, enhancer);
     var batching = false;
     var actions = [];
     var {dispatch, getState} = store;
