@@ -204,7 +204,7 @@ function createRealObj(state, realObj) {
             obj = {};
         }
     }
-    Immutable.guid(obj, Immutable.guid(state), false);
+    Immutable.guid(obj, Immutable.guid(state));
 
     return obj;
 }
