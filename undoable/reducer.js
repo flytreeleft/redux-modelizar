@@ -198,9 +198,9 @@ export function insert(state, action) {
 }
 
 export function undo(state, action = {}) {
-    var target = guid(action.$target);
+    var target = isPrimitive(action.$target) ? action.$target : guid(action.$target);
     if (!target || !histories[target]
-        || !state.same(action.$target)) {
+        || target !== guid(state)) {
         return state;
     }
 
@@ -223,9 +223,9 @@ export function undo(state, action = {}) {
 }
 
 export function redo(state, action = {}) {
-    var target = guid(action.$target);
+    var target = isPrimitive(action.$target) ? action.$target : guid(action.$target);
     if (!target || !histories[target]
-        || !state.same(action.$target)) {
+        || target !== guid(state)) {
         return state;
     }
 
@@ -248,9 +248,9 @@ export function redo(state, action = {}) {
 }
 
 export function clear(state, action = {}) {
-    var target = guid(action.$target);
+    var target = isPrimitive(action.$target) ? action.$target : guid(action.$target);
     if (!target || !histories[target]
-        || !Immutable.same(state, action.$target)) {
+        || target !== guid(state)) {
         return state;
     }
 
@@ -262,28 +262,34 @@ export function clear(state, action = {}) {
 }
 
 export function startBatch(state, action = {}) {
-    var target = guid(action.$target);
+    var target = isPrimitive(action.$target) ? action.$target : guid(action.$target);
     if (!target || !histories[target]
-        || !Immutable.same(state, action.$target)) {
+        || target !== guid(state)) {
         return state;
     }
 
     var history = histories[target];
-    history.batching = true;
-
-    return state;
+    if (history.batching) {
+        return state;
+    } else {
+        history.batching = true;
+        return state;
+    }
 }
 
 export function endBatch(state, action = {}) {
-    var target = guid(action.$target);
+    var target = isPrimitive(action.$target) ? action.$target : guid(action.$target);
     if (!target || !histories[target]
-        || !Immutable.same(state, action.$target)) {
+        || target !== guid(state)) {
         return state;
     }
 
     var history = histories[target];
-    history.batching = false;
-
-    // Add the final state to history
-    return insert(state, action);
+    if (history.batching) {
+        history.batching = false;
+        // Add the final state to history
+        return insert(state, action);
+    } else {
+        return state;
+    }
 }

@@ -6,6 +6,10 @@ import {
     UNDOABLE_START_BATCH,
     UNDOABLE_END_BATCH
 } from '../undoable/actions';
+import {
+    startBatch,
+    endBatch
+} from '../undoable/reducer';
 
 import {
     BATCH_MUTATE,
@@ -21,11 +25,23 @@ function mutationWithUndoable(reducer, options) {
     return (state, action = {}) => {
         switch (action.type) {
             case BATCH_MUTATE:
-                // TODO start batch (multiple target support)
+                action.actions.forEach((action) => {
+                    var path = state.path(action.$target);
+                    do {
+                        state = state.set(path, startBatch(state.get(path), action));
+                        path && path.pop();
+                    } while (path && path.length > 0);
+                });
                 action.actions.forEach((action) => {
                     state = mutationWithUndoable(reducer, options)(state, action);
                 });
-                // TODO end batch
+                action.actions.forEach((action) => {
+                    var path = state.path(action.$target);
+                    do {
+                        state = state.set(path, endBatch(state.get(path), action));
+                        path && path.pop();
+                    } while (path && path.length > 0);
+                });
                 return state;
             case UNDOABLE_INIT:
             case UNDOABLE_UNDO:

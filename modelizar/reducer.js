@@ -38,24 +38,17 @@ function pathNodeMutate(state, action = {}, filter = () => false, rootState) {
 }
 
 export function undoableMutate(state, action = {}, options = {}) {
-    var path = state.path(action.$target);
-    if (!path) {
-        return state;
-    }
-
     var rootState = state;
+    var path = state.path(action.$target);
+
     return state.update(path, (state) => {
         return pathNodeMutate(state, action, options.undoable, rootState);
     });
 }
 
 export function mutate(state, action = {}, options = {}) {
-    var path = state.path(action.$target);
-    if (!path) {
-        return state;
-    }
-
     var rootState = state;
+    var path = state.path(action.$target);
     var subPath = extractPath(action.key);
 
     return state.update(path, (state) => {
