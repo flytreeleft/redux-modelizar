@@ -1,7 +1,7 @@
 import {
     isPrimitive,
     hasOwn
-} from '../../immutable';
+} from 'immutable';
 
 export const PROP_OBSERVER = '__ob__';
 

@@ -1,20 +1,19 @@
 import {
     extractPath,
     isObject
-} from '../../immutable';
+} from 'immutable';
 
-import {
-    MUTATE_STATE,
-    REMOVE_SUB_STATE
-} from '../mapper/actions';
 import undoable from '../undoable';
-import {
-    getHistory
-} from '../undoable/reducer';
+import {getHistory} from '../undoable/reducer';
 import {
     init,
     UNDOABLE_INIT
 } from '../undoable/actions';
+
+import {
+    MUTATE_STATE,
+    REMOVE_SUB_STATE
+} from './actions';
 
 const emptyReducer = (state, action) => state;
 // undoable undo/redo/batching/clear时会指定目标，通过目标找到path并调用undoable更新该目标的状态

@@ -2,7 +2,7 @@ import {
     compose
 } from 'redux';
 
-import isArray from 'lodash/isArray';
+import {isArray} from 'immutable';
 
 /**
  * Override `compose` of `redux` to support to pass array argument.

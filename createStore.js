@@ -4,32 +4,25 @@ import {
     createStore
 } from 'redux';
 
-import isBoolean from 'lodash/isBoolean';
+import Immutable, {
+    isBoolean,
+    isFunction,
+    isObject
+} from 'immutable';
 
 import forEach from './utils/forEach';
 import {
-    registerFunction,
-    getFunctionByName,
-    getFunctionName
-} from './object/functions';
+    registerFunction
+} from './utils/functions';
+import toPlain, {extractFunctionFrom} from './utils/toPlain';
 
-import Immutable, {
-    isFunction,
-    isObject
-} from '../immutable';
 import mapState from './mapper/mapState';
 import modelizar from './modelizar';
 import {batchMutateState} from './modelizar/actions';
 
 function immutable(reducer) {
     var immutableOptions = {
-        toPlain: (obj) => {
-            if (isFunction(obj)) {
-                return {$fn: getFunctionName(obj)};
-            } else {
-                return Object.assign({$class: getFunctionName(obj.constructor)}, obj);
-            }
-        }
+        toPlain: toPlain
     };
 
     return (state, action) => {
@@ -52,7 +45,7 @@ export default function (reducer, preloadedState, enhancer, options) {
     var undoable = globalOpts.undoable;
     globalOpts.debug = globalOpts.debug === true;
     globalOpts.undoable = (state) => !!undoable
-                                     && undoable(state, getFunctionByName(state.$fn || state.$class));
+                                     && undoable(state, extractFunctionFrom(state));
 
     reducer = immutable(modelizar(reducer, globalOpts));
 

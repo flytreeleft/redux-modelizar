@@ -1,11 +1,4 @@
 import {
-    BATCH_MUTATE
-} from './actions';
-import {
-    MUTATE_STATE,
-    REMOVE_SUB_STATE
-} from '../mapper/actions';
-import {
     UNDOABLE_INIT,
     UNDOABLE_UNDO,
     UNDOABLE_REDO,
@@ -13,9 +6,13 @@ import {
     UNDOABLE_START_BATCH,
     UNDOABLE_END_BATCH
 } from '../undoable/actions';
+
 import {
-    mutation
-} from './reducer';
+    BATCH_MUTATE,
+    MUTATE_STATE,
+    REMOVE_SUB_STATE
+} from './actions';
+import {mutation} from './reducer';
 
 function mutationWithUndoable(reducer, options) {
     return (state, action = {}) => {

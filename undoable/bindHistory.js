@@ -1,10 +1,8 @@
 import {
     isObject
-} from '../../immutable';
+} from 'immutable';
 
-import {
-    getHistory
-} from './reducer';
+import {getHistory} from './reducer';
 import {
     init,
     undo,

@@ -1,32 +1,15 @@
-import isPrimitive from '../utils/isPrimitive';
 import {
+    isPrimitive,
     createNE,
     isArray,
     isDate
-} from '../../immutable';
+} from 'immutable';
+
+import {getMethodsUntilBase} from '../utils/class';
 import {
     mutateState,
     removeSubState
-} from './actions';
-
-function getMethodsUntilBase(cls) {
-    var proto = cls.prototype;
-    var reservedKeys = ['constructor', 'override', 'superclass', 'supr', 'extend'];
-    var methods = {};
-
-    while (proto && proto.constructor && proto.constructor !== Object) {
-        // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/getOwnPropertyNames
-        Object.getOwnPropertyNames(proto).forEach((name) => {
-            var value = proto[name];
-            if (reservedKeys.indexOf(name) < 0 && value instanceof Function && !methods[name]) {
-                methods[name] = value;
-            }
-        });
-
-        proto = Object.getPrototypeOf(proto);
-    }
-    return methods;
-}
+} from '../modelizar/actions';
 
 const PROP_STATE_MAPPER = '[[ModelizarMapper]]';
 export function reflectProto(obj, mapper) {
@@ -125,20 +108,4 @@ export function isBoundState(obj) {
 
 export function getBoundMapper(obj) {
     return !isPrimitive(obj) ? obj[PROP_STATE_MAPPER] : null;
-}
-
-export function shallowEqual(obj, other) {
-    if (isArray(obj) && isArray(other)) {
-        if (obj.length === other.length) {
-            for (var i = 0, len = obj.length; i < len; i++) {
-                if (obj[i] !== other[i]) {
-                    return false;
-                }
-            }
-            return true;
-        } else {
-            return false;
-        }
-    }
-    return obj === other;
 }

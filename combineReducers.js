@@ -1,4 +1,4 @@
-import Immutable, {hasOwn} from '../immutable';
+import Immutable, {hasOwn} from 'immutable';
 
 // NOTE: Redux Devtools supports performance monitoring
 export default function (reducers) {

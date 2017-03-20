@@ -1,30 +1,18 @@
-import uniq from 'lodash/uniq';
-
 export function getMethodsUntilBase(cls) {
     var proto = cls.prototype;
-    var methods = [];
+    var reservedKeys = ['constructor', 'override', 'superclass', 'supr', 'extend'];
+    var methods = {};
 
-    while (proto && proto.constructor !== Object) {
+    while (proto && proto.constructor && proto.constructor !== Object) {
         // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/getOwnPropertyNames
-        var names = Object.getOwnPropertyNames(proto)
-                          .filter(name => proto[name] instanceof Function);
-        Array.prototype.push.apply(methods, names);
+        Object.getOwnPropertyNames(proto).forEach((name) => {
+            var value = proto[name];
+            if (reservedKeys.indexOf(name) < 0 && value instanceof Function && !methods[name]) {
+                methods[name] = value;
+            }
+        });
 
         proto = Object.getPrototypeOf(proto);
     }
-
-    return uniq(methods).filter(name => {
-        return ['constructor', 'override', 'superclass',
-                'supr', 'extend'].indexOf(name) < 0;
-    });
-}
-
-export function isClass(fn) {
-    if (!(fn instanceof Function)) {
-        return false;
-    }
-
-    // Assume a class function should bind at least one method to prototype.
-    var proto = fn.prototype;
-    return !!proto && Object.keys(proto).length > 0;
+    return methods;
 }

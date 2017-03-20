@@ -1,31 +1,32 @@
 import invariant from 'invariant';
 
-import isBoolean from 'lodash/isBoolean';
-
 import Immutable, {
+    isBoolean,
     getNodeByPath,
     isConfigurable,
     isWritable,
     isEnumerable,
     hasOwn
-} from '../../immutable';
+} from 'immutable';
 
 import instance from '../utils/instance';
-
+import parseRegExp from '../utils/parseRegExp';
 import {
-    getFunctionByName
-} from '../object/functions';
+    FN_SENTINEL,
+    CLASS_SENTINEL,
+    hasFnSentinel,
+    hasClassSentinel,
+    extractFunctionFrom
+} from '../utils/toPlain';
+import {mutateState} from '../modelizar/actions';
+import bindHistory from '../undoable/bindHistory';
+
 import {
     isBoundState,
     getBoundMapper,
     reflectProto
 } from './utils';
-import {
-    mutateState
-} from './actions';
 import {notifyDep} from './observe';
-
-import bindHistory from '../undoable/bindHistory';
 
 /**
  *         <------------[reflect]-------------
@@ -62,7 +63,7 @@ Mapper.prototype.bind = function (obj, root) {
 
     this.obj = obj;
 
-    var reservedKeys = ['$fn', '$class'];
+    var reservedKeys = [FN_SENTINEL, CLASS_SENTINEL];
     var state = this.state;
     state.keys()
          .filter((key) => reservedKeys.indexOf(key) < 0)
@@ -177,15 +178,6 @@ Mapper.prototype.update = function (newState, root) {
     }
 };
 
-function parseRegExp(exp) {
-    if (typeof exp === 'string' && /^\/.+\/([igm]*)$/.test(exp)) {
-        // NOTE: Avoid xss attack
-        return new Function(`return ${exp};`)();
-    } else {
-        return null;
-    }
-}
-
 function createRealObj(state, realObj) {
     var obj = realObj;
     if (!Immutable.same(realObj, state)) {
@@ -193,11 +185,11 @@ function createRealObj(state, realObj) {
             obj = new Array(state.size());
         } else if (state.isDate()) {
             obj = new Date(state.valueOf());
-        } else if (state.$class) {
-            var ctor = getFunctionByName(state.$class);
+        } else if (hasClassSentinel(state)) {
+            var ctor = extractFunctionFrom(state);
             invariant(
                 ctor,
-                `No class constructor '${state.$class}' was registered.`
+                `No class constructor '${state[CLASS_SENTINEL]}' was registered.`
             );
             obj = instance(ctor);
         } else {
@@ -222,8 +214,8 @@ function mapStateToObj(store, state, obj, rootObj, immutable, cb) {
         return getNodeByPath(rootObj, subPath);
     } else if (state.isRegExp()) {
         return parseRegExp(state.valueOf());
-    } else if (state.$fn) {
-        return getFunctionByName(state.$fn);
+    } else if (hasFnSentinel(state)) {
+        return extractFunctionFrom(state);
     }
 
     obj = createRealObj(state, obj);

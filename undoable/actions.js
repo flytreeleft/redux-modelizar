@@ -1,7 +1,8 @@
 import {
-    REDUX_MODELIZAR_UNDOABLE
-} from './namespace';
+    REDUX_MODELIZAR
+} from '../namespace';
 
+export const REDUX_MODELIZAR_UNDOABLE = REDUX_MODELIZAR + '/undoable';
 export const UNDOABLE_INIT = REDUX_MODELIZAR_UNDOABLE + '/INIT';
 export const UNDOABLE_UNDO = REDUX_MODELIZAR_UNDOABLE + '/UNDO';
 export const UNDOABLE_REDO = REDUX_MODELIZAR_UNDOABLE + '/REDO';

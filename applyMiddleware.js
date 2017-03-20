@@ -2,7 +2,7 @@ import {
     applyMiddleware
 } from 'redux';
 
-import isArray from 'lodash/isArray';
+import {isArray} from 'immutable';
 
 /**
  * Override `applyMiddleware` of `redux` to support to pass array argument.
