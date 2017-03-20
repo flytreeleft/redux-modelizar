@@ -12,7 +12,10 @@ import {
     MUTATE_STATE,
     REMOVE_SUB_STATE
 } from './actions';
-import {mutation} from './reducer';
+import {
+    mutate,
+    undoableMutate
+} from './reducer';
 
 function mutationWithUndoable(reducer, options) {
     return (state, action = {}) => {
@@ -30,9 +33,10 @@ function mutationWithUndoable(reducer, options) {
             case UNDOABLE_CLEAR:
             case UNDOABLE_START_BATCH:
             case UNDOABLE_END_BATCH:
+                return undoableMutate(state, action, options);
             case MUTATE_STATE:
             case REMOVE_SUB_STATE:
-                return mutation(state, action, options);
+                return mutate(state, action, options);
             default:
                 return reducer(state, action);
         }
