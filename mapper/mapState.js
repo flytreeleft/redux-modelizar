@@ -263,5 +263,5 @@ export default function (store, newState, oldState, obj, immutable = true) {
     }
     // TODO Compare new and old, then update the differences.
 
-    return mapStateToObj(store, newState, obj, obj, immutable);
+    return mapStateToObj(store, newState, obj, null, immutable);
 }
