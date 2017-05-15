@@ -1,0 +1,3 @@
+Redux modelizar v${version}
+(c) 2017-${year} flytreeleft <flytreeleft@126.com>
+Released under the license of ${license}.
