@@ -14,7 +14,7 @@
     "url": "https://github.com/flytreeleft/redux-modelizar.git"
   },
   "bugs": "https://github.com/flytreeleft/redux-modelizar/issues",
-  "main": "src/index.js",
+  "main": "dist/redux-modelizar.js",
   "files": [
     "dist",
     "src"
