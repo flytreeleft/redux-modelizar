@@ -2,7 +2,7 @@ import {
     applyMiddleware
 } from 'redux';
 
-import {isArray} from 'immutable';
+import {isArray} from 'immutable-js';
 
 /**
  * Override `applyMiddleware` of `redux` to support to pass array argument.

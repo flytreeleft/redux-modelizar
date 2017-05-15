@@ -2,7 +2,7 @@ import {
     compose
 } from 'redux';
 
-import {isArray} from 'immutable';
+import {isArray} from 'immutable-js';
 
 /**
  * Override `compose` of `redux` to support to pass array argument.

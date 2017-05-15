@@ -8,7 +8,7 @@ import Immutable, {
     isBoolean,
     isFunction,
     isObject
-} from 'immutable';
+} from 'immutable-js';
 
 import forEach from './utils/forEach';
 import {

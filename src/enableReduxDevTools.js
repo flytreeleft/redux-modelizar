@@ -1,4 +1,4 @@
-import Immutable from 'immutable';
+import Immutable from 'immutable-js';
 
 // https://github.com/arqex/freezer-redux-devtools
 // https://github.com/gaearon/redux-devtools

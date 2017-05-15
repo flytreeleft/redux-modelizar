@@ -1,7 +1,7 @@
 import {
     extractPath,
     isObject
-} from 'immutable';
+} from 'immutable-js';
 
 import undoable from '../undoable';
 import {

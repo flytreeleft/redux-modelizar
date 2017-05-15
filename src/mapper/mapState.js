@@ -7,7 +7,7 @@ import Immutable, {
     isWritable,
     isEnumerable,
     hasOwn
-} from 'immutable';
+} from 'immutable-js';
 
 import instance from '../utils/instance';
 import parseRegExp from '../utils/parseRegExp';

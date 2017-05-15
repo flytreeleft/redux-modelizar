@@ -3,7 +3,7 @@ import {
     createNE,
     isArray,
     isDate
-} from 'immutable';
+} from 'immutable-js';
 
 import {getMethodsUntilBase} from '../utils/class';
 import {

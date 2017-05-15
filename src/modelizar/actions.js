@@ -1,7 +1,7 @@
 import {
     guid,
     isPrimitive
-} from 'immutable';
+} from 'immutable-js';
 
 import {
     REDUX_MODELIZAR

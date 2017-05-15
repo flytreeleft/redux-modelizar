@@ -1,7 +1,7 @@
 import Immutable, {
     guid,
     isPrimitive
-} from 'immutable';
+} from 'immutable-js';
 
 function deepEqualState(oldState, newState) {
     // NOTE: The reference will be changed

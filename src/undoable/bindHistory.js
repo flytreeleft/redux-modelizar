@@ -1,6 +1,6 @@
 import {
     isObject
-} from 'immutable';
+} from 'immutable-js';
 
 import {getHistory} from './reducer';
 import {

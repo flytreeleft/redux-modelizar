@@ -2,7 +2,7 @@ import {
     isFunction,
     isObject,
     hasOwn
-} from 'immutable';
+} from 'immutable-js';
 
 import {
     getFunctionName,
