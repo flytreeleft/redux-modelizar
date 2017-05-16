@@ -14,13 +14,16 @@
     "url": "https://github.com/flytreeleft/redux-modelizar.git"
   },
   "bugs": "https://github.com/flytreeleft/redux-modelizar/issues",
-  "main": "dist/redux-modelizar.js",
+  "main": "lib/index.js",
   "files": [
-    "dist",
-    "src"
+    "src",
+    "lib",
+    "dist"
   ],
   "scripts": {
-    "build": "node build/build.js",
+    "build": "npm run build:lib && npm run build:umd",
+    "build:lib": "babel src --out-dir lib",
+    "build:umd": "node build/build.js",
     "build:docs": "",
     "test": "karma start build/karma.config.js",
     "test:cover": "",
