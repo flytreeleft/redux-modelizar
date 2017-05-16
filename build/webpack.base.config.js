@@ -16,8 +16,8 @@ var test = path.resolve(__root__, 'test');
 module.exports = {
     cache: true,
     profile: true,
-    // https://webpack.github.io/docs/configuration.html#devtool
-    devtool: '#cheap-module-source-map',
+    // https://webpack.js.org/configuration/devtool/
+    // devtool: 'cheap-module-source-map',
     output: {
         // path option determines the location on disk the files are written to.
         path: config.outputPath,
@@ -70,9 +70,12 @@ if (!config.test) {
                     keep_fnames: false
                 }
             }),
-            new OptimizeJsPlugin({
-                sourceMap: true
-            }),
+            // NOTE: No filename will be wrote into the sourcemap, so quit to use it.
+            // https://github.com/nolanlawson/optimize-js/pull/25/commits/d8a142c592a0727f9545e11687c5a8fe00ed62be
+            // https://github.com/Rich-Harris/magic-string#sgeneratemap-options-
+            // new OptimizeJsPlugin({
+            //     sourceMap: true
+            // }),
             new webpack.optimize.AggressiveMergingPlugin(),
             new webpack.BannerPlugin({
                 test: /\.js$/i,
